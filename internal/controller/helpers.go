@@ -16,10 +16,7 @@ type APIError struct {
 
 func defaultHeaders() map[string]string {
 	return map[string]string{
-		"Access-Control-Allow-Headers": "Content-Type",
-		"Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-		"Access-Control-Allow-Origin":  "*",
-		"Content-Type":                 "application/json",
+		"Content-Type": "application/json",
 	}
 }
 

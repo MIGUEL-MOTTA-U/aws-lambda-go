@@ -21,6 +21,7 @@ import (
 const (
 	databaseConnectionEnv = "DATABASE_CONNECTION"
 
+
 	// R2 environment variables — all required at startup.
 	// R2_ENDPOINT      : https://<account-id>.r2.cloudflarestorage.com
 	// R2_BUCKET_NAME   : name of the R2 bucket
@@ -59,10 +60,7 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 404,
 		Headers: map[string]string{
-			"Access-Control-Allow-Headers": "Content-Type",
-			"Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-			"Access-Control-Allow-Origin":  "*",
-			"Content-Type":                 "application/json",
+			"Content-Type": "application/json",
 		},
 		Body: `{"message":"route not found"}`,
 	}, nil
@@ -104,6 +102,7 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("unable to create R2 storage client: %v", err))
 	}
+
 
 	// ── Dependency wiring ────────────────────────────────────────────────────
 	userRepo := repository.NewGormUserRepository(db)
