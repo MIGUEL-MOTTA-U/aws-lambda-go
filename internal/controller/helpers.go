@@ -12,6 +12,7 @@ import (
 type APIError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Status  int    `json:"status"`
 }
 
 func defaultHeaders() map[string]string {
@@ -59,6 +60,7 @@ func logAndBuildError(req events.APIGatewayV2HTTPRequest, statusCode int, code s
 	payload := APIError{
 		Code:    code,
 		Message: clientMsg,
+		Status:  statusCode,
 	}
 
 	body, _ := json.Marshal(payload)

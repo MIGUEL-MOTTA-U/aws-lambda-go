@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/mail"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -80,21 +83,93 @@ func (s UserService) UpdateUser(ctx context.Context, id string, user model.User)
 		return model.User{}, err
 	}
 
-	user.ID = id
-	user.CreationDate = existing.CreationDate
-	if strings.TrimSpace(user.CreationDate) == "" {
-		user.CreationDate = s.clock().Format(time.RFC3339)
+	// Create a copy of the existing user to update
+	updated := existing
+
+	// Only update fields that are provided (non-empty) in the request
+	if strings.TrimSpace(user.Name) != "" {
+		updated.Name = user.Name
+	}
+	if strings.TrimSpace(user.Email) != "" {
+		updated.Email = user.Email
+	}
+	if strings.TrimSpace(user.Username) != "" {
+		updated.Username = user.Username
+	}
+	if strings.TrimSpace(user.Birthdate) != "" {
+		updated.Birthdate = user.Birthdate
+	}
+	if strings.TrimSpace(user.CreationDate) != "" {
+		updated.CreationDate = user.CreationDate
+	}
+	if strings.TrimSpace(user.Phone) != "" {
+		updated.Phone = user.Phone
+	}
+	if strings.TrimSpace(user.Role) != "" {
+		updated.Role = user.Role
+	}
+	if strings.TrimSpace(user.Company) != "" {
+		updated.Company = user.Company
+	}
+	if strings.TrimSpace(user.OfficeName) != "" {
+		updated.OfficeName = user.OfficeName
+	}
+	if strings.TrimSpace(user.OfficeAddress) != "" {
+		updated.OfficeAddress = user.OfficeAddress
+	}
+	if strings.TrimSpace(user.License) != "" {
+		updated.License = user.License
+	}
+	if strings.TrimSpace(user.Bio) != "" {
+		updated.Bio = user.Bio
+	}
+	if strings.TrimSpace(user.Headline) != "" {
+		updated.Headline = user.Headline
+	}
+	if strings.TrimSpace(user.AvatarURL) != "" {
+		updated.AvatarURL = user.AvatarURL
+	}
+	if strings.TrimSpace(user.AvatarAssetID) != "" {
+		updated.AvatarAssetID = user.AvatarAssetID
+	}
+	if strings.TrimSpace(user.WhatsAppLink) != "" {
+		updated.WhatsAppLink = user.WhatsAppLink
+	}
+	if strings.TrimSpace(user.InstagramURL) != "" {
+		updated.InstagramURL = user.InstagramURL
+	}
+	if strings.TrimSpace(user.LinkedInURL) != "" {
+		updated.LinkedInURL = user.LinkedInURL
+	}
+	if strings.TrimSpace(user.FacebookURL) != "" {
+		updated.FacebookURL = user.FacebookURL
 	}
 
-	if err := validateUser(user); err != nil {
+	// Handle metadata - if provided, merge with existing
+	if userMetadataProvided(user.Metadata) {
+		// If we want to merge, we'd need to handle each field
+		// For simplicity, we'll replace if provided
+		updated.Metadata = user.Metadata
+	}
+
+	// Ensure ID is set
+	updated.ID = id
+
+	// Ensure CreationDate is set (should already be from existing)
+	if strings.TrimSpace(updated.CreationDate) == "" {
+		updated.CreationDate = s.clock().Format(time.RFC3339)
+	}
+
+	// Validate the updated user
+	if err := validateUser(updated); err != nil {
 		return model.User{}, err
 	}
 
-	if err := s.repository.Update(ctx, user); err != nil {
+	if err := s.repository.Update(ctx, updated); err != nil {
 		return model.User{}, err
 	}
 
-	return user, nil
+	return updated, nil
 }
 
 func (s UserService) DeleteUser(ctx context.Context, id string) error {
@@ -107,30 +182,88 @@ func (s UserService) DeleteUser(ctx context.Context, id string) error {
 }
 
 func validateUser(user model.User) error {
-	switch {
-	case strings.TrimSpace(user.ID) == "":
+	// Trim spaces for string fields
+	id := strings.TrimSpace(user.ID)
+	if id == "" {
 		return validationError("id is required")
-	case strings.TrimSpace(user.Name) == "":
-		return validationError("name is required")
-	case strings.TrimSpace(user.Email) == "":
-		return validationError("email is required")
-	case !strings.Contains(user.Email, "@"):
-		return validationError("email is invalid")
-	case strings.TrimSpace(user.Username) == "":
-		return validationError("username is required")
-	case strings.TrimSpace(user.Birthdate) == "":
-		return validationError("birthdate is required")
-	case strings.TrimSpace(user.CreationDate) == "":
-		return validationError("creationdate is required")
-	default:
-		return nil
 	}
+
+	// Email validation
+	email := strings.TrimSpace(user.Email)
+	if email != "" {
+		if _, err := mail.ParseAddress(email); err != nil {
+			return validationError("email is invalid")
+		}
+	}
+
+	// Birthdate validation (expected format: YYYY-MM-DD)
+	birthdate := strings.TrimSpace(user.Birthdate)
+	if birthdate != "" {
+		if len(birthdate) != 10 || birthdate[4] != '-' || birthdate[7] != '-' {
+			return validationError("birthdate must be in YYYY-MM-DD format")
+		}
+		if _, err := time.Parse("2006-01-02", birthdate); err != nil {
+			return validationError("birthdate is invalid")
+		}
+	}
+
+	// Phone validation (optional, but if set should contain only digits, spaces, +, -, (, ))
+	phone := strings.TrimSpace(user.Phone)
+	if phone != "" {
+		// Allow digits, spaces, plus, hyphen, parentheses
+		matched, _ := regexp.MatchString(`^[\d\s\+\-\(\)]+$`, phone)
+		if !matched {
+			return validationError("phone number contains invalid characters")
+		}
+		// Optionally, check length? We'll skip for simplicity.
+	}
+
+	// URL fields validation
+	urlFields := []struct {
+		value string
+		field string
+	}{
+		{strings.TrimSpace(user.WhatsAppLink), "whatsapp_link"},
+		{strings.TrimSpace(user.InstagramURL), "instagram_url"},
+		{strings.TrimSpace(user.LinkedInURL), "linkedin_url"},
+		{strings.TrimSpace(user.FacebookURL), "facebook_url"},
+		{strings.TrimSpace(user.AvatarURL), "avatar_url"},
+	}
+
+	for _, f := range urlFields {
+		if f.value != "" {
+			if err := validateURL(f.value); err != nil {
+				return validationError(fmt.Sprintf("%s is invalid: %v", f.field, err))
+			}
+		}
+	}
+
+	// Other string fields: we don't validate beyond trimming, but we can check for empty if they are required?
+	// According to the frontend, many are optional, so we skip.
+
+	return nil
 }
 
 func validationError(message string) error {
 	return fmt.Errorf("%w: %s", ErrInvalidUser, message)
 }
 
+func validateURL(urlStr string) error {
+	if u, err := url.Parse(urlStr); err != nil {
+		return err
+	} else if !(u.Scheme == "http" || u.Scheme == "https") || u.Host == "" {
+		return fmt.Errorf("URL must have http or https scheme and a host")
+	}
+	return nil
+}
+
+func userMetadataProvided(metadata model.UserMetadata) bool {
+	return metadata.Stats != nil ||
+		metadata.Badges != nil ||
+		metadata.Services != nil ||
+		strings.TrimSpace(metadata.HeroImageURL) != "" ||
+		strings.TrimSpace(metadata.HeroVideoURL) != ""
+}
 func NewID() string {
 	bytes := make([]byte, 16)
 	if _, err := rand.Read(bytes); err != nil {

@@ -95,7 +95,7 @@ func (s *UploadService) UploadFiles(
 	req UploadFilesRequest,
 	ownerID string,
 ) ([]model.Asset, error) {
-	// ── 1. Validate request shape ────────────────────────────────────────────
+	// Validate request shape.
 	if len(files) == 0 {
 		return nil, fmt.Errorf("%w: at least one file is required", ErrInvalidUpload)
 	}
@@ -115,14 +115,14 @@ func (s *UploadService) UploadFiles(
 		return nil, fmt.Errorf("%w: unknown entity_type %q", ErrInvalidUpload, req.EntityType)
 	}
 
-	// ── 2. Validate every file before touching R2 ────────────────────────────
+	// Validate every file before touching R2.
 	for i, f := range files {
 		if err := validateFile(f, constraint); err != nil {
 			return nil, fmt.Errorf("file[%d] %q: %w", i, f.Filename, err)
 		}
 	}
 
-	// ── 3. Enforce per-entity count limit ────────────────────────────────────
+	// Enforce per-entity count limit.
 	if constraint.MaxCountPerEntity > 0 {
 		current, err := s.assetRepo.CountByEntity(ctx, req.EntityType, req.EntityID)
 		if err != nil {
@@ -136,7 +136,7 @@ func (s *UploadService) UploadFiles(
 		}
 	}
 
-	// ── 4. Concurrent upload fan-out ─────────────────────────────────────────
+	// Concurrent upload fan-out.
 	results := make([]model.Asset, len(files))
 	var (
 		mu          sync.Mutex
@@ -165,7 +165,7 @@ func (s *UploadService) UploadFiles(
 	}
 
 	if err := g.Wait(); err != nil {
-		// ── 5. Concurrent rollback on failure ─────────────────────────────────
+		// Concurrent rollback on failure.
 		// Delete objects that were already written to R2 before the failure.
 		// This runs in a fresh context because the original one may be cancelled.
 		s.rollbackUploads(successKeys)
@@ -193,6 +193,18 @@ func (s *UploadService) uploadOne(
 		return model.Asset{}, fmt.Errorf("R2 upload: %w", err)
 	}
 
+	// Populate URL based on whether the asset is public or private
+	var url string
+	if isPublic {
+		url = s.storage.PublicURL(key)
+	} else {
+		var err error
+		url, err = s.storage.GenerateGetURL(ctx, key, privateURLTTL)
+		if err != nil {
+			return model.Asset{}, fmt.Errorf("generating signed URL: %w", err)
+		}
+	}
+
 	// Persist metadata in the database
 	asset := model.Asset{
 		ID:          assetID,
@@ -204,9 +216,10 @@ func (s *UploadService) uploadOne(
 		Status:      model.AssetStatusConfirmed,
 		IsPublic:    isPublic,
 		OwnerID:     ownerID,
+		URL:         url,
 	}
 	if err := s.assetRepo.Create(ctx, asset); err != nil {
-		// R2 write succeeded but DB failed — delete the orphaned R2 object.
+		// R2 write succeeded but DB failed; delete the orphaned R2 object.
 		if delErr := s.storage.DeleteObject(context.Background(), key); delErr != nil {
 			log.Printf("[ERROR] uploadOne: DB save failed AND rollback of R2 object %q failed: %v", key, delErr)
 		}
@@ -217,7 +230,7 @@ func (s *UploadService) uploadOne(
 }
 
 // rollbackUploads deletes a list of R2 object keys concurrently (best-effort).
-// Errors are only logged — they do not surface to the caller because the
+// Errors are only logged; they do not surface to the caller because the
 // original upload error has already been returned.
 func (s *UploadService) rollbackUploads(keys []string) {
 	if len(keys) == 0 {
@@ -263,7 +276,7 @@ func (s *UploadService) GetAssetURL(ctx context.Context, id string, ownerID stri
 
 // ListEntityAssets returns all confirmed assets for an entity and resolves their URLs.
 // Public assets get CDN URLs; private assets get presigned URLs.
-// URL generation for each asset runs sequentially — presign is a CPU-only operation
+// URL generation for each asset runs sequentially; presign is a CPU-only operation
 // and the list is bounded by MaxCountPerEntity, so parallelism is not needed here.
 func (s *UploadService) ListEntityAssets(ctx context.Context, entityType model.AssetEntityType, entityID string) ([]model.Asset, error) {
 	assets, err := s.assetRepo.FindByEntity(ctx, entityType, entityID)
@@ -312,10 +325,10 @@ func (s *UploadService) DeleteAsset(ctx context.Context, id string, ownerID stri
 	return nil
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// Helpers.
 
 // buildObjectKey constructs the R2 object key for an asset.
-// The key is always generated internally — clients never propose or see it.
+// The key is always generated internally; clients never propose or see it.
 //
 // Pattern: <entity-prefix>/<entity-id>/<subfolder>/<asset-id><ext>
 // Example: listings/abc123/photos/f3a1b2c4d5e6.webp
@@ -366,7 +379,7 @@ func validateFile(f ParsedFile, c model.AssetConstraint) error {
 
 	// Detect MIME type from file magic numbers (prevents MIME spoofing)
 	detected := http.DetectContentType(f.Data)
-	// DetectContentType can return e.g. "image/jpeg; charset=..." — strip params
+	// DetectContentType can return e.g. "image/jpeg; charset=..."; strip params
 	if idx := strings.Index(detected, ";"); idx != -1 {
 		detected = strings.TrimSpace(detected[:idx])
 	}
