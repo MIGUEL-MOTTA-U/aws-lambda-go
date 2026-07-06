@@ -289,17 +289,20 @@ func listingIDFromMediaPath(path string) string {
 // This assumes JWT claims are forwarded by API Gateway V2 as a context authorizer.
 // Adapt this function to match your actual authentication mechanism.
 func ownerIDFromRequest(req events.APIGatewayV2HTTPRequest) string {
-	// API Gateway V2 JWT authorizer injects claims into RequestContext.Authorizer.JWT.Claims
-	if claims := req.RequestContext.Authorizer.JWT.Claims; claims != nil {
-		if sub, ok := claims["sub"]; ok {
-			return sub
+	// Requests without an authorizer configured carry a nil Authorizer.
+	if authorizer := req.RequestContext.Authorizer; authorizer != nil {
+		// API Gateway V2 JWT authorizer injects claims into Authorizer.JWT.Claims
+		if jwt := authorizer.JWT; jwt != nil {
+			if sub, ok := jwt.Claims["sub"]; ok {
+				return sub
+			}
 		}
-	}
-	// Fallback: custom Lambda authorizer may inject into context
-	if ctx := req.RequestContext.Authorizer.Lambda; ctx != nil {
-		if sub, ok := ctx["sub"]; ok {
-			if s, ok := sub.(string); ok {
-				return s
+		// Fallback: custom Lambda authorizer may inject into context
+		if ctx := authorizer.Lambda; ctx != nil {
+			if sub, ok := ctx["sub"]; ok {
+				if s, ok := sub.(string); ok {
+					return s
+				}
 			}
 		}
 	}
