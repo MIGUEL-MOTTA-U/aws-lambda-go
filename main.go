@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"rs-lambda-go/internal/controller"
+	"rs-lambda-go/internal/localserver"
 	"rs-lambda-go/internal/model"
 	"rs-lambda-go/internal/repository"
 	"rs-lambda-go/internal/service"
@@ -73,6 +74,15 @@ func isListingsMediaRoute(path string) bool {
 }
 
 func main() {
+	// When not running inside the AWS Lambda runtime, act as a plain HTTP
+	// server for local development and load configuration from .env.
+	runningLocally := os.Getenv("AWS_LAMBDA_RUNTIME_API") == ""
+	if runningLocally {
+		if err := localserver.LoadDotEnv(".env"); err != nil {
+			panic(fmt.Sprintf("unable to load .env file: %v", err))
+		}
+	}
+
 	// Database.
 	databaseConnection := strings.TrimSpace(os.Getenv(databaseConnectionEnv))
 	if databaseConnection == "" {
@@ -119,6 +129,13 @@ func main() {
 		userController:    userController,
 		listingController: listingController,
 		uploadController:  uploadController,
+	}
+
+	if runningLocally {
+		if err := localserver.Serve(router.Route); err != nil {
+			panic(fmt.Sprintf("local server stopped: %v", err))
+		}
+		return
 	}
 
 	lambda.Start(router.Route)
