@@ -120,6 +120,7 @@ type Listing struct {
 	Subtype           string          `json:"subtype" gorm:"column:subtype"`
 	OperationType     string          `json:"operation_type" gorm:"column:operation_type"`
 	PublicationStatus string          `json:"publication_status" gorm:"column:publication_status"`
+	Featured          bool            `json:"featured" gorm:"column:featured;default:false"`
 	Location          Location        `json:"location" gorm:"type:jsonb;column:location"`
 	Pricing           Pricing         `json:"pricing" gorm:"type:jsonb;column:pricing"`
 	Areas             Areas           `json:"areas" gorm:"type:jsonb;column:areas"`
