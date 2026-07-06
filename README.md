@@ -81,6 +81,22 @@ go build -o bootstrap main.go
 ~\Go\Bin\build-lambda-zip.exe -o lambda-handler.zip bootstrap
 ```
 
+## Local Development
+
+Outside the AWS Lambda runtime the binary starts a plain HTTP server (see `internal/localserver`) that adapts each request into an API Gateway V2 event, so the exact same code path runs locally and in AWS. It loads variables from `.env` automatically and answers CORS preflights itself:
+
+```bash
+go run .        # serves on http://localhost:8080 (PORT to override)
+```
+
+This is the backend the front end (`stuff/front-real-state/real-state-website`, `pnpm dev`) points to by default.
+
+Run the integration tests (router + controllers + services over in-memory repositories):
+
+```bash
+go test ./...
+```
+
 ## Configuration
 
 The application is configured using the following environment variables:
@@ -93,6 +109,9 @@ The application is configured using the following environment variables:
 | `R2_ACCESS_KEY_ID` | Yes | R2 API token Access Key ID (from Cloudflare dashboard). |
 | `R2_SECRET_ACCESS_KEY` | Yes | R2 API token Secret Access Key. |
 | `R2_PUBLIC_URL` | Yes | Custom domain/CDN endpoint mapped to the R2 bucket for serving public files (e.g. `https://assets.tudominio.com`). |
+| `ALLOW_UNAUTHENTICATED_UPLOADS` | No | **Stage 1 only (pre-Cognito).** When `true`, uploads without a JWT authorizer are attributed to a fixed owner. Remove once the Cognito JWT authorizer is enabled. |
+| `PORT` | No | Local dev server port (default `8080`). Ignored in AWS Lambda. |
+| `ACCESS_CONTROL_ALLOW_ORIGIN` | No | CORS origin echoed by the **local** dev server (default `*`). In AWS, CORS is configured on the API Gateway. |
 
 ## Usage
 
