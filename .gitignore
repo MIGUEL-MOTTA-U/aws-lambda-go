@@ -33,3 +33,4 @@ go.work.sum
 *.zip
 bootstrap
 context/
+stuff/
