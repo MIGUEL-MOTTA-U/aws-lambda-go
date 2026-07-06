@@ -19,7 +19,7 @@ Hallazgos relevantes:
 - El front era 100% mock: sin cliente HTTP, sin variables de entorno, sin tests.
 - El modelo `Listing` del backend no tenía flag `featured` (el front lo usa en tabla y sitio público).
 
-## Etapa 1 — Integración funcional sin autenticación (en curso)
+## Etapa 1 — Integración funcional sin autenticación (✅ completada)
 
 ### 1.1 Backend
 
@@ -81,15 +81,43 @@ pnpm install
 pnpm dev            # http://localhost:5173 apunta a http://localhost:8080 por defecto
 ```
 
-### 1.6 Registro de commits (Etapa 1)
+### 1.6 Bugs preexistentes encontrados y corregidos durante la etapa
+
+1. **Pánico por puntero nil en uploads** (`089b862`): `ownerIDFromRequest` desreferenciaba `RequestContext.Authorizer.JWT` sin verificar nil; cualquier `POST /uploads` sin authorizer (el estado actual del Gateway) tumbaba la Lambda. Detectado por los tests de router.
+2. **Pánico de AutoMigrate en el arranque** (`d7c7336`): `UserMetadata` tenía campos `interface{}` sin mapeo GORM → `AutoMigrate(&User{})` fallaba (`unsupported data type`) y el proceso entraba en pánico. Corregido con `driver.Valuer`/`sql.Scanner` + columna `jsonb` (mismo patrón que `Listing`). Detectado al levantar el servidor local contra Neon.
+
+### 1.7 Verificación end-to-end ejecutada (2026-07-06)
+
+Contra el servidor local (`go run .`) conectado a la base de datos real de Neon:
+
+- `POST /listings` → 201 con ID generado, `featured` persistido, `metadata.updated_at` y `source_system` por defecto.
+- `GET /listings/{id}` → 200 · `PUT` (publicar) → 200 · `GET /listings/{id}/media` → 200 · `DELETE` → 204 · `GET` posterior → 404.
+- `OPTIONS /listings` (preflight) → 204 con headers `Access-Control-*`.
+- `POST /users` con `metadata.stats` jsonb → 201 · `PUT` parcial (solo teléfono) preserva nombre y metadata → 200 · `DELETE` → 204.
+- Suite Go: `go test ./...` OK (9 tests de integración de router). Suite front: `pnpm test` OK (19 tests) y `pnpm build` OK.
+
+### 1.8 Registro de commits (Etapa 1)
 
 Backend (este repo):
 
-- _pendiente de completar al cierre de la etapa_
+- `007e819` docs: add ai-notes.md with staged front-back integration plan
+- `40e8a21` feat(localserver): run API as plain HTTP server for local development
+- `facf8e9` feat(model): add featured flag to listings
+- `ee75b7a` feat(uploads): allow anonymous owner via ALLOW_UNAUTHENTICATED_UPLOADS (stage 1)
+- `089b862` fix(uploads): avoid nil pointer panic when request has no authorizer
+- `4dbb748` test: add router-level integration tests for users, listings and uploads
+- `ca2e8ce` docs: document local dev server, tests and new env vars
+- `d7c7336` fix(model): store user metadata as jsonb to unblock AutoMigrate
 
 Frontend (`stuff/front-real-state/real-state-website`):
 
-- _pendiente de completar al cierre de la etapa_
+- `3d54eda` feat(api): add typed API client, backend model types and UI mappers
+- `24068e3` feat(listings): connect listings table to backend CRUD
+- `acae4f8` feat(settings): back agent profile with /users API
+- `24b72dd` feat(form): wire listing form to create/update and photo uploads
+- `3014e86` feat(public,dashboard): read real listings for public site and KPIs
+- `d1d6477` test(api): add integration tests for API client and mappers
+- `47bb8a2` docs: document backend integration, VITE_API_URL and test command
 
 ## Etapa 2 — Autenticación con AWS Cognito (pendiente)
 
