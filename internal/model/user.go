@@ -1,11 +1,36 @@
 package model
 
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+)
+
 type UserMetadata struct {
 	Stats        interface{} `json:"stats,omitempty"`
 	Badges       interface{} `json:"badges,omitempty"`
 	Services     interface{} `json:"services,omitempty"`
 	HeroImageURL string      `json:"hero_image_url,omitempty"`
 	HeroVideoURL string      `json:"hero_video_url,omitempty"`
+}
+
+// Value and Scan store UserMetadata as a jsonb column, consistent with the
+// jsonb handling on Listing. Without them GORM cannot map the interface{}
+// fields and AutoMigrate fails at startup.
+
+func (m UserMetadata) Value() (driver.Value, error) {
+	return json.Marshal(m)
+}
+
+func (m *UserMetadata) Scan(value interface{}) error {
+	if value == nil {
+		return nil
+	}
+	b, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("user metadata scan source is not []byte")
+	}
+	return json.Unmarshal(b, m)
 }
 
 type User struct {
@@ -29,5 +54,5 @@ type User struct {
 	InstagramURL  string       `json:"instagram_url,omitempty" gorm:"column:instagram_url"`
 	LinkedInURL   string       `json:"linkedin_url,omitempty" gorm:"column:linkedin_url"`
 	FacebookURL   string       `json:"facebook_url,omitempty" gorm:"column:facebook_url"`
-	Metadata      UserMetadata `json:"metadata,omitempty" gorm:"column:metadata"`
+	Metadata      UserMetadata `json:"metadata,omitempty" gorm:"type:jsonb;column:metadata"`
 }
