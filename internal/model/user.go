@@ -12,6 +12,10 @@ type UserMetadata struct {
 	Services     interface{} `json:"services,omitempty"`
 	HeroImageURL string      `json:"hero_image_url,omitempty"`
 	HeroVideoURL string      `json:"hero_video_url,omitempty"`
+	// Textos editables del sitio público del agente.
+	Presentation string `json:"presentation,omitempty"` // párrafo descriptivo del hero
+	AboutExtra   string `json:"about_extra,omitempty"`  // segundo párrafo de "nosotros" (el primero es bio)
+	AwardText    string `json:"award_text,omitempty"`   // banda de premios sobre la foto
 }
 
 // Value and Scan store UserMetadata as a jsonb column, consistent with the

@@ -35,7 +35,9 @@ var AssetConstraints = map[AssetEntityType]AssetConstraint{
 		MaxSizeBytes:      5 * 1024 * 1024, // 5 MB
 		AllowedMIMEs:      []string{"image/jpeg", "image/png", "image/webp"},
 		AllowedExts:       []string{".jpg", ".jpeg", ".png", ".webp"},
-		IsPublic:          false,
+		// Público: la foto del agente se muestra en el sitio público y su URL
+		// se guarda en user.avatar_url; una URL presignada expiraría en 1h.
+		IsPublic:          true,
 		MaxCountPerEntity: 1,
 	},
 	EntityTypeListingPhoto: {

@@ -262,7 +262,10 @@ func userMetadataProvided(metadata model.UserMetadata) bool {
 		metadata.Badges != nil ||
 		metadata.Services != nil ||
 		strings.TrimSpace(metadata.HeroImageURL) != "" ||
-		strings.TrimSpace(metadata.HeroVideoURL) != ""
+		strings.TrimSpace(metadata.HeroVideoURL) != "" ||
+		strings.TrimSpace(metadata.Presentation) != "" ||
+		strings.TrimSpace(metadata.AboutExtra) != "" ||
+		strings.TrimSpace(metadata.AwardText) != ""
 }
 func NewID() string {
 	bytes := make([]byte, 16)

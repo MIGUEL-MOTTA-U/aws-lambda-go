@@ -129,10 +129,19 @@ func (s *UploadService) UploadFiles(
 			return nil, fmt.Errorf("counting existing assets: %w", err)
 		}
 		if int(current)+len(files) > constraint.MaxCountPerEntity {
-			return nil, fmt.Errorf(
-				"%w: entity %q already has %d asset(s); adding %d would exceed the limit of %d",
-				ErrInvalidUpload, req.EntityID, current, len(files), constraint.MaxCountPerEntity,
-			)
+			// Single-asset entities (e.g. user_avatar) use replace semantics:
+			// uploading a new file replaces the existing one instead of
+			// failing against the limit.
+			if constraint.MaxCountPerEntity == 1 && len(files) == 1 {
+				if err := s.deleteExistingEntityAssets(ctx, req); err != nil {
+					return nil, fmt.Errorf("replacing existing asset: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf(
+					"%w: entity %q already has %d asset(s); adding %d would exceed the limit of %d",
+					ErrInvalidUpload, req.EntityID, current, len(files), constraint.MaxCountPerEntity,
+				)
+			}
 		}
 	}
 
@@ -227,6 +236,27 @@ func (s *UploadService) uploadOne(
 	}
 
 	return asset, nil
+}
+
+// deleteExistingEntityAssets removes every confirmed asset of an entity
+// (soft-delete in DB + best-effort R2 object deletion). Used to implement
+// replace semantics on single-asset entities before uploading the new file.
+func (s *UploadService) deleteExistingEntityAssets(ctx context.Context, req UploadFilesRequest) error {
+	existing, err := s.assetRepo.FindByEntity(ctx, req.EntityType, req.EntityID)
+	if err != nil {
+		return fmt.Errorf("listing existing assets: %w", err)
+	}
+	for _, asset := range existing {
+		if err := s.assetRepo.SoftDelete(ctx, asset.ID); err != nil {
+			return fmt.Errorf("soft-deleting asset %q: %w", asset.ID, err)
+		}
+		if err := s.storage.DeleteObject(ctx, asset.ObjectKey); err != nil {
+			// The DB record is already gone; the orphaned R2 object can be
+			// cleaned up later, so this does not block the replacement.
+			log.Printf("[WARN] deleteExistingEntityAssets: asset %q soft-deleted but R2 deletion failed: %v", asset.ID, err)
+		}
+	}
+	return nil
 }
 
 // rollbackUploads deletes a list of R2 object keys concurrently (best-effort).
