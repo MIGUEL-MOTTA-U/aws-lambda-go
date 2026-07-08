@@ -186,13 +186,19 @@ func TestListingsCRUDFlow(t *testing.T) {
 	createBody := `{
 		"title": "Apartamento El Poblado",
 		"slug": "apartamento-el-poblado",
+		"external_id": "C21-12345",
+		"description_short": "Apartamento moderno en El Poblado.",
 		"property_type": "apartment",
+		"classification": "residential",
 		"operation_type": "sale",
 		"publication_status": "draft",
 		"featured": true,
 		"language": "es",
 		"location": {"country": "Colombia", "state": "Antioquia", "city": "Medellín", "stratum": 6},
-		"pricing": {"sale_price": 850000000, "currency": "COP"}
+		"pricing": {"sale_price": 850000000, "currency": "COP"},
+		"layout": {"rooms": 5, "bedrooms": 3, "bathrooms": 2, "half_bathrooms": 1, "parking_spaces": 2},
+		"structure": {"year_built": 2019, "floor_type": "Baldosa", "built_levels": 6},
+		"features": {"has_pool": true, "pets_allowed": true, "tags": ["Ascensor", "Vista Panorámica"]}
 	}`
 	resp, err := router.Route(ctx, makeRequest("POST", "/listings", createBody))
 	if err != nil {
@@ -218,6 +224,27 @@ func TestListingsCRUDFlow(t *testing.T) {
 	if created.Metadata.SourceSystem != "century21colombia" {
 		t.Fatalf("create: expected default source_system, got %q", created.Metadata.SourceSystem)
 	}
+	if created.ExternalID != "C21-12345" {
+		t.Fatalf("create: expected external_id to persist, got %q", created.ExternalID)
+	}
+	if created.Classification != "residential" {
+		t.Fatalf("create: expected classification to persist, got %q", created.Classification)
+	}
+	if created.DescriptionLong != created.DescriptionShort || created.DescriptionLong == "" {
+		t.Fatalf("create: expected description_long to default to description_short, got %q", created.DescriptionLong)
+	}
+	if created.Layout.Rooms != 5 {
+		t.Fatalf("create: expected layout.rooms to persist, got %d", created.Layout.Rooms)
+	}
+	if created.Structure.FloorType != "Baldosa" {
+		t.Fatalf("create: expected structure.floor_type to persist, got %q", created.Structure.FloorType)
+	}
+	if !created.Features.HasPool || !created.Features.PetsAllowed {
+		t.Fatal("create: expected features.has_pool and features.pets_allowed to persist")
+	}
+	if len(created.Features.Tags) != 2 {
+		t.Fatalf("create: expected 2 feature tags, got %d", len(created.Features.Tags))
+	}
 
 	id := string(created.ListingID)
 
@@ -240,9 +267,11 @@ func TestListingsCRUDFlow(t *testing.T) {
 		t.Fatalf("list: expected 1 listing, got %d", len(all))
 	}
 
-	// Update (archive it).
+	// Update (archive it, with an explicit long description).
 	updateBody := `{
 		"title": "Apartamento El Poblado",
+		"description_short": "Apartamento moderno en El Poblado.",
+		"description_long": "Apartamento moderno en El Poblado, con acabados de lujo y vista panorámica.",
 		"property_type": "apartment",
 		"operation_type": "sale",
 		"publication_status": "archived",
@@ -258,6 +287,9 @@ func TestListingsCRUDFlow(t *testing.T) {
 	}
 	if updated.PublicationStatus != "archived" {
 		t.Fatalf("update: expected archived status, got %q", updated.PublicationStatus)
+	}
+	if updated.DescriptionLong == updated.DescriptionShort {
+		t.Fatal("update: expected explicit description_long to be preserved")
 	}
 
 	// Delete.
@@ -281,8 +313,11 @@ func TestListingValidationErrors(t *testing.T) {
 	}{
 		{"invalid json", `{not json`},
 		{"invalid currency", `{"title":"x","pricing":{"sale_price":100,"currency":"GBP"}}`},
+		{"eur no longer allowed", `{"title":"x","pricing":{"sale_price":100,"currency":"EUR"}}`},
 		{"invalid language", `{"title":"x","language":"fr"}`},
 		{"invalid stratum", `{"title":"x","location":{"stratum":9}}`},
+		{"invalid property_type", `{"title":"x","property_type":"castle"}`},
+		{"invalid classification", `{"title":"x","classification":"rural"}`},
 	}
 
 	for _, tc := range cases {
@@ -368,6 +403,33 @@ func TestUsersCRUDFlow(t *testing.T) {
 	}
 	if updated.Name != "Aura Urrea" {
 		t.Fatalf("update: name should be preserved, got %q", updated.Name)
+	}
+
+	// Update with public-site metadata (presentation, about, award, stats).
+	metadataBody := `{
+		"bio": "Con más de 12 años de experiencia en el mercado inmobiliario.",
+		"metadata": {
+			"presentation": "Acompaño a mis clientes en cada paso.",
+			"about_extra": "Mi enfoque combina datos de mercado y negociación.",
+			"award_text": "Agente destacada 2022 · 2023 · 2024",
+			"stats": {"sold": "+200", "experience": "12", "satisfied": "98%", "ranking": "#1"}
+		}
+	}`
+	resp, _ = router.Route(ctx, makeRequest("PUT", "/users/"+created.ID, metadataBody))
+	if resp.StatusCode != 200 {
+		t.Fatalf("metadata update: expected 200, got %d (%s)", resp.StatusCode, resp.Body)
+	}
+	if err := json.Unmarshal([]byte(resp.Body), &updated); err != nil {
+		t.Fatalf("metadata update: invalid JSON response: %v", err)
+	}
+	if updated.Metadata.Presentation == "" || updated.Metadata.AboutExtra == "" || updated.Metadata.AwardText == "" {
+		t.Fatalf("metadata update: expected public-site texts to persist, got %+v", updated.Metadata)
+	}
+	if updated.Metadata.Stats == nil {
+		t.Fatal("metadata update: expected stats to persist")
+	}
+	if updated.Phone != "+57 311 000 0000" {
+		t.Fatalf("metadata update: phone should be preserved, got %q", updated.Phone)
 	}
 
 	// List.

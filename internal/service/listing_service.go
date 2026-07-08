@@ -13,6 +13,32 @@ import (
 
 var ErrInvalidListing = errors.New("invalid listing")
 
+// Canonical codes shared with the frontend (see mappers.ts / ai-notes.md).
+var allowedPropertyTypes = map[string]bool{
+	"house":              true, // Casa
+	"apartment":          true, // Departamento
+	"apartment_building": true, // Edificio de Apartamentos
+	"suite":              true, // Suite
+	"studio_apartment":   true, // Apartaestudio
+	"lot":                true, // Lote/Terreno
+	"recreational_farm":  true, // Finca de Recreación
+	"medical_office":     true, // Consultorio
+	"building":           true, // Edificio
+	"production_farm":    true, // Finca de Producción
+	"hotel":              true, // Hotel
+	"commercial_space":   true, // Local Comercial
+	"office":             true, // Oficina
+	"warehouse":          true, // Bodega
+}
+
+var allowedClassifications = map[string]bool{
+	"residential":                  true, // Habitacional
+	"commercial":                   true, // Comercial
+	"industrial":                   true, // Industrial
+	"mixed_residential_commercial": true, // Mixto Habitacional Comercial
+	"mixed_commercial_industrial":  true, // Mixto Comercial Industrial
+}
+
 type ListingService struct {
 	repository  repository.ListingRepository
 	idGenerator IDGenerator
@@ -54,6 +80,7 @@ func (s ListingService) CreateListing(ctx context.Context, listing model.Listing
 	if strings.TrimSpace(listing.Metadata.SourceSystem) == "" {
 		listing.Metadata.SourceSystem = "century21colombia"
 	}
+	applyDescriptionDefaults(&listing)
 
 	if err := validateListing(listing); err != nil {
 		return model.Listing{}, err
@@ -82,6 +109,7 @@ func (s ListingService) UpdateListing(ctx context.Context, id string, listing mo
 	if strings.TrimSpace(listing.Metadata.SourceSystem) == "" {
 		listing.Metadata.SourceSystem = "century21colombia"
 	}
+	applyDescriptionDefaults(&listing)
 
 	if err := validateListing(listing); err != nil {
 		return model.Listing{}, err
@@ -127,8 +155,11 @@ func validateListing(listing model.Listing) error {
 	if listing.Title != "" && strings.TrimSpace(listing.Title) == "" {
 		return validationListingError("title is required")
 	}
-	if listing.PropertyType != "" && strings.TrimSpace(listing.PropertyType) == "" {
-		return validationListingError("property_type is required")
+	if listing.PropertyType != "" && !allowedPropertyTypes[strings.TrimSpace(listing.PropertyType)] {
+		return validationListingError("property_type must be one of: house, apartment, apartment_building, suite, studio_apartment, lot, recreational_farm, medical_office, building, production_farm, hotel, commercial_space, office, warehouse")
+	}
+	if listing.Classification != "" && !allowedClassifications[strings.TrimSpace(listing.Classification)] {
+		return validationListingError("classification must be one of: residential, commercial, industrial, mixed_residential_commercial, mixed_commercial_industrial")
 	}
 	if listing.OperationType != "" && strings.TrimSpace(listing.OperationType) == "" {
 		return validationListingError("operation_type is required")
@@ -167,8 +198,8 @@ func validateListing(listing model.Listing) error {
 	// Validate currency if provided
 	if listing.Pricing.Currency != "" {
 		currency := strings.ToUpper(strings.TrimSpace(listing.Pricing.Currency))
-		if currency != "COP" && currency != "USD" && currency != "EUR" {
-			return validationListingError("currency must be one of COP, USD, or EUR")
+		if currency != "COP" && currency != "USD" {
+			return validationListingError("currency must be one of COP or USD")
 		}
 	}
 
@@ -190,6 +221,14 @@ func validateListing(listing model.Listing) error {
 	}
 
 	return nil
+}
+
+// applyDescriptionDefaults fills description_long with description_short when
+// only the short one is provided (the long description is optional).
+func applyDescriptionDefaults(listing *model.Listing) {
+	if strings.TrimSpace(listing.DescriptionLong) == "" {
+		listing.DescriptionLong = listing.DescriptionShort
+	}
 }
 
 func validationListingError(message string) error {

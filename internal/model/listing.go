@@ -60,6 +60,7 @@ type Areas struct {
 }
 
 type Layout struct {
+	Rooms         int `json:"rooms"`
 	Bedrooms      int `json:"bedrooms"`
 	Bathrooms     int `json:"bathrooms"`
 	HalfBathrooms int `json:"half_bathrooms"`
@@ -75,14 +76,18 @@ type Structure struct {
 	ConservationStatus  string `json:"conservation_status"`
 	TerrainType         string `json:"terrain_type"`
 	StructureType       string `json:"structure_type"`
+	FloorType           string `json:"floor_type"`
 	BuiltLevels         int    `json:"built_levels"`
 }
 
 type Features struct {
-	Indoor     []string `json:"indoor"`
-	Outdoor    []string `json:"outdoor"`
-	Commercial []string `json:"commercial"`
-	Project    []string `json:"project"`
+	Indoor      []string `json:"indoor"`
+	Outdoor     []string `json:"outdoor"`
+	Commercial  []string `json:"commercial"`
+	Project     []string `json:"project"`
+	Tags        []string `json:"tags"`
+	HasPool     bool     `json:"has_pool"`
+	PetsAllowed bool     `json:"pets_allowed"`
 }
 
 type Media struct {
@@ -112,12 +117,16 @@ type ListingMetadata struct {
 
 type Listing struct {
 	ListingID         ListingID       `json:"listing_id" gorm:"primaryKey;column:listing_id"`
+	ExternalID        string          `json:"external_id" gorm:"column:external_id"`
 	Slug              string          `json:"slug" gorm:"column:slug"`
 	URL               string          `json:"url" gorm:"column:url"`
 	Language          string          `json:"language" gorm:"column:language"`
 	Title             string          `json:"title" gorm:"column:title"`
+	DescriptionShort  string          `json:"description_short" gorm:"column:description_short"`
+	DescriptionLong   string          `json:"description_long" gorm:"column:description_long"`
 	PropertyType      string          `json:"property_type" gorm:"column:property_type"`
 	Subtype           string          `json:"subtype" gorm:"column:subtype"`
+	Classification    string          `json:"classification" gorm:"column:classification"`
 	OperationType     string          `json:"operation_type" gorm:"column:operation_type"`
 	PublicationStatus string          `json:"publication_status" gorm:"column:publication_status"`
 	Featured          bool            `json:"featured" gorm:"column:featured;default:false"`
