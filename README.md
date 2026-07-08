@@ -26,8 +26,8 @@ The application automatically validates incoming HTTP request payloads, performs
   - Enforces entity-specific size and count limits (e.g., maximum 30 photos per listing, 1 avatar per user).
   - Inspects file headers using magic number detection (`http.DetectContentType`) to prevent MIME-spoofing attacks (renaming `.exe` to `.jpg`).
 - **Secure File URL Resolution**:
-  - Public assets (e.g. listing photos) use non-expiring CDN URLs.
-  - Private assets (e.g. user avatars, listing PDFs) generate short-lived presigned GET URLs dynamically.
+  - Public assets (e.g. listing photos, user avatars) use non-expiring CDN URLs.
+  - Private assets (e.g. listing PDFs) generate short-lived presigned GET URLs dynamically.
 
 ## Architecture
 
@@ -140,9 +140,11 @@ The files must be uploaded as `multipart/form-data`.
 
 **Form Fields:**
 - `entity_type`: Category of asset. Allowed options:
-  - `user_avatar` (Private, max 5MB, JPG/PNG/WebP, limit 1)
+  - `user_avatar` (Public — shown on the public site, max 5MB, JPG/PNG/WebP, limit 1)
   - `listing_photo` (Public, max 10MB, JPG/PNG/WebP, limit 30)
   - `listing_pdf` (Private, max 20MB, PDF, limit 1)
+
+Single-asset entity types (limit 1, e.g. `user_avatar`) use **replace semantics**: uploading a new file soft-deletes the previous asset and removes its R2 object instead of failing against the limit. Multi-asset types (e.g. `listing_photo`) keep the hard limit.
 - `entity_id`: The ID of the owner user or listing.
 - `file` (or `files`): File payload(s) to upload. Up to 10 files per request.
 

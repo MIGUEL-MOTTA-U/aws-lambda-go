@@ -48,10 +48,20 @@ Hallazgos relevantes:
 
 - `publication_status`: códigos canónicos `published | draft | archived` (el front traduce a "Publicado/Borrador/Archivado").
 - `operation_type`: `sale | rent | sale_rent | exchange`.
-- `property_type`: `apartment | house | penthouse | farm | commercial | office | lot | warehouse`.
+- `property_type` (validado por el backend, el front traduce a etiquetas en español):
+  `house` (Casa) | `apartment` (Departamento) | `apartment_building` (Edificio de Apartamentos) | `suite` (Suite) | `studio_apartment` (Apartaestudio) | `lot` (Lote/Terreno) | `recreational_farm` (Finca de Recreación) | `medical_office` (Consultorio) | `building` (Edificio) | `production_farm` (Finca de Producción) | `hotel` (Hotel) | `commercial_space` (Local Comercial) | `office` (Oficina) | `warehouse` (Bodega).
+- `classification` (validado por el backend): `residential` (Habitacional) | `commercial` (Comercial) | `industrial` (Industrial) | `mixed_residential_commercial` (Mixto Habitacional Comercial) | `mixed_commercial_industrial` (Mixto Comercial Industrial).
 - `language`: `es | en` (validado por el backend).
-- Moneda: `COP | USD | EUR` (validado por el backend).
+- Moneda: `COP | USD` (validado por el backend; EUR se eliminó del contrato).
+- `external_id`: identificador del inmueble en el sistema externo de origen (columna propia, adicional al `listing_id` interno que sigue siendo la clave de todos los endpoints).
+- Descripciones: `description_short` (tarjetas/listados) y `description_long` (detalle). La larga es opcional: si llega vacía, el backend la iguala a la corta.
+- Distribución/estructura: `layout.rooms` (Ambientes), `structure.floor_type` (Tipo de piso).
+- Amenidades booleanas: `features.has_pool` (Alberca), `features.pets_allowed` (Mascotas).
+- `features.tags`: lista libre de "Datos generales" del proveedor (ej. "Agua Caliente", "Ascensor", "Vista Panorámica").
 - Fotos: la principal es `media.photos[0]`; las URLs provienen de R2 (`R2_PUBLIC_URL`).
+- Perfil del agente: el front lo resuelve por `VITE_PROFILE_USER_ID` (fallback: primer usuario de `GET /users`). Los textos del sitio público viven en `user.metadata`: `presentation` (párrafo del hero), `about_extra` (segundo párrafo de "nosotros"; el primero es `bio`), `award_text` (banda de premios) y `stats` (`sold | experience | satisfied | ranking`, strings de display).
+- `user_avatar` es **público** (URL CDN permanente guardada en `user.avatar_url`, se muestra en el sitio público); solo `listing_pdf` sigue siendo privado con URL presignada.
+- Entidades de un solo asset (`user_avatar`, `listing_pdf`) tienen semántica de **reemplazo**: subir un archivo nuevo elimina el anterior (soft-delete en BD + borrado en R2) en lugar de fallar contra el límite. El front ya no muestra imágenes mockeadas de perfil: sin foto se renderizan las iniciales del agente.
 
 ### 1.4 Configuración de despliegue requerida (manual)
 
