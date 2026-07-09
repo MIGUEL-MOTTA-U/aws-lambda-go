@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -11,6 +13,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"rs-lambda-go/internal/auth"
 	"rs-lambda-go/internal/controller"
 	"rs-lambda-go/internal/localserver"
 	"rs-lambda-go/internal/model"
@@ -35,13 +38,26 @@ const (
 	r2PublicURLEnv  = "R2_PUBLIC_URL"
 )
 
+// TokenVerifier validates a bearer token and returns its claims.
+// Satisfied by *auth.Verifier; stubbed in tests.
+type TokenVerifier interface {
+	Verify(ctx context.Context, token string) (map[string]string, error)
+}
+
 type Router struct {
 	userController    *controller.UserController
 	listingController *controller.ListingController
 	uploadController  *controller.UploadController
+	// tokenVerifier protege las rutas de mutación. nil = guard deshabilitado
+	// (desarrollo local sin COGNITO_ISSUER/COGNITO_AUDIENCE).
+	tokenVerifier TokenVerifier
 }
 
 func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if resp, authorized := r.authorize(ctx, &req); !authorized {
+		return resp, nil
+	}
+
 	path := strings.TrimRight(req.RawPath, "/")
 	if path == "/users" || strings.HasPrefix(path, "/users/") {
 		return r.userController.HandleRequest(ctx, req)
@@ -71,6 +87,67 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 func isListingsMediaRoute(path string) bool {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	return len(parts) == 3 && parts[0] == "listings" && parts[2] == "media"
+}
+
+// authorize enforces a valid Cognito JWT on mutation routes. Reads stay open
+// (the public site consumes them without a session). On success the claims
+// are injected into the request context with the same shape the API Gateway
+// JWT authorizer uses, so ownerIDFromRequest keeps working unchanged.
+func (r Router) authorize(ctx context.Context, req *events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, bool) {
+	if r.tokenVerifier == nil || !requiresAuth(*req) {
+		return events.APIGatewayV2HTTPResponse{}, true
+	}
+
+	token := bearerToken(req.Headers)
+	if token == "" {
+		return unauthorizedResponse("authentication required"), false
+	}
+	claims, err := r.tokenVerifier.Verify(ctx, token)
+	if err != nil {
+		log.Printf("[WARN] rejected token on %s %s: %v", req.RequestContext.HTTP.Method, req.RawPath, err)
+		return unauthorizedResponse("invalid or expired token"), false
+	}
+
+	if req.RequestContext.Authorizer == nil {
+		req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+			JWT: &events.APIGatewayV2HTTPRequestContextAuthorizerJWTDescription{Claims: claims},
+		}
+	}
+	return events.APIGatewayV2HTTPResponse{}, true
+}
+
+// requiresAuth marks every non-read request to the API resources as guarded.
+func requiresAuth(req events.APIGatewayV2HTTPRequest) bool {
+	method := req.RequestContext.HTTP.Method
+	if method == http.MethodGet || method == http.MethodOptions || method == http.MethodHead {
+		return false
+	}
+	path := strings.TrimRight(req.RawPath, "/")
+	for _, prefix := range []string{"/listings", "/users", "/uploads"} {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func bearerToken(headers map[string]string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, "authorization") {
+			if token, found := strings.CutPrefix(strings.TrimSpace(value), "Bearer "); found {
+				return strings.TrimSpace(token)
+			}
+		}
+	}
+	return ""
+}
+
+func unauthorizedResponse(message string) events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusUnauthorized,
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       fmt.Sprintf(`{"code":"UNAUTHORIZED","message":"%s","status":401}`, message),
+	}
 }
 
 func main() {
@@ -125,10 +202,21 @@ func main() {
 	uploadService := service.NewUploadService(assetRepo, r2Client, service.NewID)
 	uploadController := controller.NewUploadController(uploadService)
 
+	// Guard de autenticación para rutas de mutación (Etapa 2).
+	// Sin COGNITO_ISSUER/COGNITO_AUDIENCE queda deshabilitado (solo dev).
+	var tokenVerifier TokenVerifier
+	if verifier := auth.NewVerifierFromEnv(); verifier != nil {
+		tokenVerifier = verifier
+		log.Printf("[INFO] Cognito JWT guard enabled for mutation routes")
+	} else {
+		log.Printf("[WARN] Cognito JWT guard DISABLED (set COGNITO_ISSUER and COGNITO_AUDIENCE); mutation routes are unprotected")
+	}
+
 	router := Router{
 		userController:    userController,
 		listingController: listingController,
 		uploadController:  uploadController,
+		tokenVerifier:     tokenVerifier,
 	}
 
 	if runningLocally {

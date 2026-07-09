@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -159,6 +160,22 @@ func newTestRouter() (Router, *fakeListingRepository, *fakeUserRepository) {
 		listingController: controller.NewListingController(listingService),
 		uploadController:  controller.NewUploadController(&stubUploadService{}),
 	}, listingRepo, userRepo
+}
+
+// stubTokenVerifier acepta únicamente el token "valid-token".
+type stubTokenVerifier struct{}
+
+func (stubTokenVerifier) Verify(ctx context.Context, token string) (map[string]string, error) {
+	if token == "valid-token" {
+		return map[string]string{"sub": "user-sub-123", "token_use": "id"}, nil
+	}
+	return nil, errors.New("invalid token")
+}
+
+func newGuardedRouter() Router {
+	router, _, _ := newTestRouter()
+	router.tokenVerifier = stubTokenVerifier{}
+	return router
 }
 
 func makeRequest(method, path, body string) events.APIGatewayV2HTTPRequest {
@@ -496,5 +513,92 @@ func TestUploadWithoutOwnerIsUnauthorized(t *testing.T) {
 	resp, _ := router.Route(ctx, req)
 	if resp.StatusCode != 401 {
 		t.Fatalf("expected 401 without authorizer, got %d (%s)", resp.StatusCode, resp.Body)
+	}
+}
+
+// ─── Auth guard (Cognito JWT en rutas de mutación) ───────────────────────────
+
+func TestAuthGuardRejectsMutationsWithoutToken(t *testing.T) {
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	cases := []struct {
+		method, path string
+	}{
+		{"POST", "/listings"},
+		{"PUT", "/listings/some-id"},
+		{"DELETE", "/listings/some-id"},
+		{"PUT", "/users/some-id"},
+		{"POST", "/uploads"},
+		{"DELETE", "/uploads/some-id"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			resp, _ := router.Route(ctx, makeRequest(tc.method, tc.path, `{}`))
+			if resp.StatusCode != 401 {
+				t.Fatalf("expected 401 without token, got %d (%s)", resp.StatusCode, resp.Body)
+			}
+			var apiErr controller.APIError
+			if err := json.Unmarshal([]byte(resp.Body), &apiErr); err != nil || apiErr.Code != "UNAUTHORIZED" {
+				t.Fatalf("expected UNAUTHORIZED body, got %s", resp.Body)
+			}
+		})
+	}
+}
+
+func TestAuthGuardRejectsInvalidToken(t *testing.T) {
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	req := makeRequest("POST", "/listings", `{"title":"x"}`)
+	req.Headers["Authorization"] = "Bearer forged-token"
+	resp, _ := router.Route(ctx, req)
+	if resp.StatusCode != 401 {
+		t.Fatalf("expected 401 with invalid token, got %d (%s)", resp.StatusCode, resp.Body)
+	}
+}
+
+func TestAuthGuardAllowsMutationsWithValidToken(t *testing.T) {
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	req := makeRequest("POST", "/listings", `{
+		"title": "Apartamento Protegido",
+		"property_type": "apartment",
+		"operation_type": "sale",
+		"pricing": {"sale_price": 100000000, "currency": "COP"}
+	}`)
+	req.Headers["authorization"] = "Bearer valid-token" // header en minúsculas: debe aceptarse
+	resp, _ := router.Route(ctx, req)
+	if resp.StatusCode != 201 {
+		t.Fatalf("expected 201 with valid token, got %d (%s)", resp.StatusCode, resp.Body)
+	}
+}
+
+func TestAuthGuardKeepsReadsPublic(t *testing.T) {
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	for _, path := range []string{"/listings", "/users", "/listings/abc/media"} {
+		resp, _ := router.Route(ctx, makeRequest("GET", path, ""))
+		if resp.StatusCode == 401 {
+			t.Fatalf("expected GET %s to stay public, got 401", path)
+		}
+	}
+}
+
+func TestAuthGuardInjectsClaimsForUploads(t *testing.T) {
+	t.Setenv("ALLOW_UNAUTHENTICATED_UPLOADS", "false")
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	// Con token válido el guard inyecta el claim sub como owner: la subida
+	// ya no responde 401 por falta de authorizer (400 por multipart vacío).
+	req := makeRequest("POST", "/uploads", "")
+	req.Headers["Authorization"] = "Bearer valid-token"
+	req.Headers["content-type"] = "multipart/form-data; boundary=x"
+	resp, _ := router.Route(ctx, req)
+	if resp.StatusCode == 401 {
+		t.Fatalf("expected owner claims injected by the guard, got 401 (%s)", resp.Body)
 	}
 }
