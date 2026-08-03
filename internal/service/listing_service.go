@@ -187,12 +187,9 @@ func validateListing(listing model.Listing) error {
 	}
 
 	// Validate pricing fields
-	// At least one of sale_price or rent_price should be provided if they are being set
-	// We check if either field is non-zero to determine if it's being set
-	if listing.Pricing.SalePrice != 0 || listing.Pricing.RentPrice != 0 {
-		if listing.Pricing.SalePrice <= 0 && listing.Pricing.RentPrice <= 0 {
-			return validationListingError("at least one of sale_price or rent_price must be greater than zero")
-		}
+	// At least one of sale_price or rent_price must be provided and greater than zero
+	if listing.Pricing.SalePrice <= 0 && listing.Pricing.RentPrice <= 0 {
+		return validationListingError("at least one of sale_price or rent_price must be greater than zero")
 	}
 
 	// Validate currency if provided

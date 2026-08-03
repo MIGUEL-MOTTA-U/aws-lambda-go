@@ -329,6 +329,9 @@ func TestListingValidationErrors(t *testing.T) {
 		body string
 	}{
 		{"invalid json", `{not json`},
+		{"missing sale and rent price", `{"title":"x","pricing":{"currency":"COP"}}`},
+		{"zero sale and rent price", `{"title":"x","pricing":{"sale_price":0,"rent_price":0,"currency":"COP"}}`},
+		{"negative sale and rent price", `{"title":"x","pricing":{"sale_price":-1,"rent_price":-1,"currency":"COP"}}`},
 		{"invalid currency", `{"title":"x","pricing":{"sale_price":100,"currency":"GBP"}}`},
 		{"eur no longer allowed", `{"title":"x","pricing":{"sale_price":100,"currency":"EUR"}}`},
 		{"invalid language", `{"title":"x","language":"fr"}`},
