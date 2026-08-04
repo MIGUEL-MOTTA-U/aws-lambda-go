@@ -505,6 +505,23 @@ func TestListingMediaRouteIsHandled(t *testing.T) {
 	}
 }
 
+func TestCORSPreflightReturnsNoContent(t *testing.T) {
+	router, _, _ := newTestRouter()
+	ctx := context.Background()
+
+	req := makeRequest("OPTIONS", "/users", "")
+	req.Headers["origin"] = "https://aura-urrea.vercel.app"
+	req.Headers["access-control-request-method"] = "GET"
+
+	resp, _ := router.Route(ctx, req)
+	if resp.StatusCode != 204 {
+		t.Fatalf("expected 204 from OPTIONS preflight, got %d (%s)", resp.StatusCode, resp.Body)
+	}
+	if resp.Headers["Access-Control-Allow-Origin"] != "https://aura-urrea.vercel.app" {
+		t.Fatalf("expected production origin in CORS response, got %q", resp.Headers["Access-Control-Allow-Origin"])
+	}
+}
+
 func TestUploadWithoutOwnerIsUnauthorized(t *testing.T) {
 	t.Setenv("ALLOW_UNAUTHENTICATED_UPLOADS", "false")
 

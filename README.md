@@ -113,6 +113,17 @@ The application is configured using the following environment variables:
 | `PORT` | No | Local dev server port (default `8080`). Ignored in AWS Lambda. |
 | `ACCESS_CONTROL_ALLOW_ORIGIN` | No | CORS origin echoed by the **local** dev server (default `*`). In AWS, CORS is configured on the API Gateway. |
 
+### Upload troubleshooting (R2 credentials)
+
+If uploads fail with `UPLOAD_FAILED` and a message similar to:
+
+`InvalidArgument: Credential access key has length 20, should be 32`
+
+the Lambda is not using Cloudflare R2 credentials. Ensure both
+`R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` are set in the **active Lambda
+environment** (not only in local `.env`), and that the key pair belongs to an
+R2 API token for the configured bucket/account.
+
 ## Usage
 
 ### Endpoint Specifications

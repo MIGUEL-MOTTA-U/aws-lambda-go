@@ -54,6 +54,17 @@ type Router struct {
 }
 
 func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	if req.RequestContext.HTTP.Method == http.MethodOptions {
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusNoContent,
+			Headers: map[string]string{
+				"Access-Control-Allow-Origin":  allowedOrigin(req.Headers),
+				"Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
+				"Access-Control-Allow-Headers": "content-type,authorization",
+			},
+		}, nil
+	}
+
 	if resp, authorized := r.authorize(ctx, &req); !authorized {
 		return resp, nil
 	}
@@ -140,6 +151,19 @@ func bearerToken(headers map[string]string) string {
 		}
 	}
 	return ""
+}
+
+func allowedOrigin(headers map[string]string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, "origin") {
+			origin := strings.TrimSpace(value)
+			switch origin {
+			case "https://aura-urrea.vercel.app", "http://localhost:5173":
+				return origin
+			}
+		}
+	}
+	return "https://aura-urrea.vercel.app"
 }
 
 func unauthorizedResponse(message string) events.APIGatewayV2HTTPResponse {
