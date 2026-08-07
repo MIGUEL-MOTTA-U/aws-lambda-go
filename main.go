@@ -196,7 +196,7 @@ func main() {
 	}
 
 	// Auto-migrate tables for postgres
-	err = db.AutoMigrate(&model.User{}, &model.Listing{}, &model.Asset{})
+	err = db.AutoMigrate(&model.User{}, &model.Listing{}, &model.Asset{}, &model.Visit{})
 	if err != nil {
 		panic(fmt.Sprintf("unable to auto-migrate database schema: %v", err))
 	}
