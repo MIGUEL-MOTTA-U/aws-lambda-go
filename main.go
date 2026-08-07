@@ -48,6 +48,7 @@ type Router struct {
 	userController    *controller.UserController
 	listingController *controller.ListingController
 	uploadController  *controller.UploadController
+	visitController   *controller.VisitController
 	// tokenVerifier protege las rutas de mutación. nil = guard deshabilitado
 	// (desarrollo local sin COGNITO_ISSUER/COGNITO_AUDIENCE).
 	tokenVerifier TokenVerifier
@@ -82,6 +83,9 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 	}
 	if path == "/uploads" || strings.HasPrefix(path, "/uploads/") {
 		return r.uploadController.HandleRequest(ctx, req)
+	}
+	if path == "/visits" || strings.HasPrefix(path, "/visits/") {
+		return r.visitController.HandleRequest(ctx, req)
 	}
 
 	return events.APIGatewayV2HTTPResponse{
@@ -226,6 +230,10 @@ func main() {
 	uploadService := service.NewUploadService(assetRepo, r2Client, service.NewID)
 	uploadController := controller.NewUploadController(uploadService)
 
+	visitRepo := repository.NewGormVisitRepository(db)
+	visitService := service.NewVisitService(visitRepo, service.NewID)
+	visitController := controller.NewVisitController(visitService)
+
 	// Guard de autenticación para rutas de mutación (Etapa 2).
 	// Sin COGNITO_ISSUER/COGNITO_AUDIENCE queda deshabilitado (solo dev).
 	var tokenVerifier TokenVerifier
@@ -240,6 +248,7 @@ func main() {
 		userController:    userController,
 		listingController: listingController,
 		uploadController:  uploadController,
+		visitController:   visitController,
 		tokenVerifier:     tokenVerifier,
 	}
 
