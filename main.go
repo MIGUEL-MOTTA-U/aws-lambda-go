@@ -45,10 +45,11 @@ type TokenVerifier interface {
 }
 
 type Router struct {
-	userController    *controller.UserController
-	listingController *controller.ListingController
-	uploadController  *controller.UploadController
-	visitController   *controller.VisitController
+	userController     *controller.UserController
+	listingController  *controller.ListingController
+	uploadController   *controller.UploadController
+	visitController    *controller.VisitController
+	analyticsController *controller.AnalyticsController
 	// tokenVerifier protege las rutas de mutación. nil = guard deshabilitado
 	// (desarrollo local sin COGNITO_ISSUER/COGNITO_AUDIENCE).
 	tokenVerifier TokenVerifier
@@ -86,6 +87,9 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 	}
 	if path == "/visits" || strings.HasPrefix(path, "/visits/") {
 		return r.visitController.HandleRequest(ctx, req)
+	}
+	if path == "/analytics" || strings.HasPrefix(path, "/analytics/") {
+		return r.analyticsController.HandleRequest(ctx, req)
 	}
 
 	return events.APIGatewayV2HTTPResponse{
@@ -132,12 +136,19 @@ func (r Router) authorize(ctx context.Context, req *events.APIGatewayV2HTTPReque
 }
 
 // requiresAuth marks every non-read request to the API resources as guarded.
+// Exception: GET /analytics/* is guarded too — analytics data is for the
+// admin panel only and must not leak via the public read endpoints.
 func requiresAuth(req events.APIGatewayV2HTTPRequest) bool {
 	method := req.RequestContext.HTTP.Method
+	path := strings.TrimRight(req.RawPath, "/")
+
+	// Analytics reads are guarded even though GETs elsewhere aren't.
+	if method == http.MethodGet && (path == "/analytics" || strings.HasPrefix(path, "/analytics/")) {
+		return true
+	}
 	if method == http.MethodGet || method == http.MethodOptions || method == http.MethodHead {
 		return false
 	}
-	path := strings.TrimRight(req.RawPath, "/")
 	for _, prefix := range []string{"/listings", "/users", "/uploads"} {
 		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
@@ -234,6 +245,9 @@ func main() {
 	visitService := service.NewVisitService(visitRepo, service.NewID)
 	visitController := controller.NewVisitController(visitService)
 
+	analyticsService := service.NewAnalyticsService(visitRepo)
+	analyticsController := controller.NewAnalyticsController(analyticsService)
+
 	// Guard de autenticación para rutas de mutación (Etapa 2).
 	// Sin COGNITO_ISSUER/COGNITO_AUDIENCE queda deshabilitado (solo dev).
 	var tokenVerifier TokenVerifier
@@ -245,11 +259,12 @@ func main() {
 	}
 
 	router := Router{
-		userController:    userController,
-		listingController: listingController,
-		uploadController:  uploadController,
-		visitController:   visitController,
-		tokenVerifier:     tokenVerifier,
+		userController:      userController,
+		listingController:   listingController,
+		uploadController:    uploadController,
+		visitController:     visitController,
+		analyticsController: analyticsController,
+		tokenVerifier:       tokenVerifier,
 	}
 
 	if runningLocally {

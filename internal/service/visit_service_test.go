@@ -59,6 +59,18 @@ func (r *fakeVisitRepository) ListByListingSince(ctx context.Context, listingID 
 	return out, nil
 }
 
+func (r *fakeVisitRepository) ListAllSince(ctx context.Context, since time.Time) ([]model.Visit, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var out []model.Visit
+	for _, v := range r.visits {
+		if !v.CreatedAt.Before(since) {
+			out = append(out, v)
+		}
+	}
+	return out, nil
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 func newTestService(t *testing.T, repo *fakeVisitRepository) *VisitService {

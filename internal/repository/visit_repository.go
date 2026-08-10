@@ -19,10 +19,12 @@ type VisitRepository interface {
 	ListByVisitorSince(ctx context.Context, visitorID string, since time.Time) ([]model.Visit, error)
 
 	// ListByListingSince returns events for a listing after `since`,
-	// ordered by created_at ASC. Used by P-021's aggregate queries.
-	// Not exercised by P-020 tests but declared here so the
-	// repository contract is complete.
+	// ordered by created_at ASC. Used by the visitor timeline UI.
 	ListByListingSince(ctx context.Context, listingID string, since time.Time) ([]model.Visit, error)
+
+	// ListAllSince returns every event after `since`, ordered by
+	// created_at ASC. Used by analytics aggregations (P-021).
+	ListAllSince(ctx context.Context, since time.Time) ([]model.Visit, error)
 }
 
 // ErrVisitInvalid is returned when the visit payload fails validation

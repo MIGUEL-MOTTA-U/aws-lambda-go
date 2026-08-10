@@ -45,3 +45,15 @@ func (r *GormVisitRepository) ListByListingSince(ctx context.Context, listingID 
 	}
 	return visits, nil
 }
+
+func (r *GormVisitRepository) ListAllSince(ctx context.Context, since time.Time) ([]model.Visit, error) {
+	var visits []model.Visit
+	err := r.db.WithContext(ctx).
+		Where("created_at >= ?", since).
+		Order("created_at ASC").
+		Find(&visits).Error
+	if err != nil {
+		return nil, err
+	}
+	return visits, nil
+}

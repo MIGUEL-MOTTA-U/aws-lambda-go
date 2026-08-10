@@ -137,6 +137,23 @@ func (s *stubUploadService) DeleteAsset(ctx context.Context, id string, ownerID 
 	return repository.ErrAssetNotFound
 }
 
+// stubVisitService satisfies controller.VisitService for routing tests.
+// The auth-guard tests don't exercise the visit pipeline itself, so the
+// implementation can be a no-op.
+type stubVisitService struct{}
+
+func (stubVisitService) RecordEvent(ctx context.Context, req service.VisitRecordRequest) (model.Visit, error) {
+	return model.Visit{}, nil
+}
+
+// stubAnalyticsService satisfies controller.AnalyticsService for routing
+// tests. Same rationale as stubVisitService.
+type stubAnalyticsService struct{}
+
+func (stubAnalyticsService) TopListings(ctx context.Context, window string, limit int) ([]service.ListingVisitStats, error) {
+	return nil, nil
+}
+
 // ─── Test harness ────────────────────────────────────────────────────────────
 
 func newTestRouter() (Router, *fakeListingRepository, *fakeUserRepository) {
@@ -156,9 +173,11 @@ func newTestRouter() (Router, *fakeListingRepository, *fakeUserRepository) {
 	userService := service.NewUserServiceWithDependencies(userRepo, idGenerator, fixedClock)
 
 	return Router{
-		userController:    controller.NewUserController(userService),
-		listingController: controller.NewListingController(listingService),
-		uploadController:  controller.NewUploadController(&stubUploadService{}),
+		userController:       controller.NewUserController(userService),
+		listingController:    controller.NewListingController(listingService),
+		uploadController:     controller.NewUploadController(&stubUploadService{}),
+		visitController:      controller.NewVisitController(stubVisitService{}),
+		analyticsController: controller.NewAnalyticsController(stubAnalyticsService{}),
 	}, listingRepo, userRepo
 }
 
@@ -604,6 +623,32 @@ func TestAuthGuardKeepsReadsPublic(t *testing.T) {
 		if resp.StatusCode == 401 {
 			t.Fatalf("expected GET %s to stay public, got 401", path)
 		}
+	}
+}
+
+// TestAuthGuardProtectsAnalyticsReads guards the exception in
+// requiresAuth: GET /analytics/* must require a valid Cognito JWT even
+// though every other GET stays public.
+func TestAuthGuardProtectsAnalyticsReads(t *testing.T) {
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	resp, _ := router.Route(ctx, makeRequest("GET", "/analytics/listings", ""))
+	if resp.StatusCode != 401 {
+		t.Fatalf("expected GET /analytics/listings to require auth, got %d (%s)", resp.StatusCode, resp.Body)
+	}
+}
+
+// TestAuthGuardKeepsVisitsPublic guards the public POST /visits route
+// (anonymous visitors emit events without a session).
+func TestAuthGuardKeepsVisitsPublic(t *testing.T) {
+	router := newGuardedRouter()
+	ctx := context.Background()
+
+	body := `{"visitor_id":"v1","listing_id":"l1","event_type":"view_start"}`
+	resp, _ := router.Route(ctx, makeRequest("POST", "/visits", body))
+	if resp.StatusCode == 401 {
+		t.Fatalf("expected POST /visits to stay public, got 401 (%s)", resp.Body)
 	}
 }
 
