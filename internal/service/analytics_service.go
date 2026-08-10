@@ -17,7 +17,10 @@ const (
 	// and its matching view_end from the same visitor/listing. See DEC-009:
 	// if the end event arrives more than this after the start, we treat
 	// it as orphaned and skip it from duration stats.
-	analyticsPairingWindow = 30 * time.Second
+	analyticsPairingWindow = 30 * time.Minute
+
+	// maxAnalyticsRetention is the maximum retention window for event aggregations (DEC-007).
+	maxAnalyticsRetention = 90 * 24 * time.Hour
 )
 
 var (
@@ -39,10 +42,14 @@ type ListingVisitStats struct {
 // AnalyticsService computes aggregate visit statistics over time windows.
 type AnalyticsService struct {
 	visitRepo repository.VisitRepository
+	now       func() time.Time
 }
 
 func NewAnalyticsService(visitRepo repository.VisitRepository) *AnalyticsService {
-	return &AnalyticsService{visitRepo: visitRepo}
+	return &AnalyticsService{
+		visitRepo: visitRepo,
+		now:       func() time.Time { return time.Now().UTC() },
+	}
 }
 
 // TopListings returns visit statistics for the listings with the most views
@@ -62,7 +69,16 @@ func (s *AnalyticsService) TopListings(ctx context.Context, window string, limit
 		limit = 200
 	}
 
-	since := time.Now().UTC().Add(-dur)
+	clock := s.now
+	if clock == nil {
+		clock = func() time.Time { return time.Now().UTC() }
+	}
+	now := clock()
+	since := now.Add(-dur)
+	cutoff := now.Add(-maxAnalyticsRetention)
+	if since.Before(cutoff) {
+		since = cutoff
+	}
 
 	// Strategy: pull every visit event for the window (cap below keeps this
 	// safe in V1 — the table is small). Pair starts with ends, compute
@@ -137,7 +153,7 @@ func countViews(events []model.Visit) int {
 
 // pairDurations matches each view_end with the closest preceding
 // view_start from the same visitor+listing within the pairing window.
-// Unmatched ends (orphaned, late) are ignored.
+// Unmatched ends (orphaned, late) use DurationMs if provided.
 func pairDurations(events []model.Visit) []int {
 	// Events are already ordered ASC by the repository.
 	// For each visitor+listing pair, scan and pair start→end.
@@ -153,15 +169,18 @@ func pairDurations(events []model.Visit) []int {
 			pending[k] = e.CreatedAt
 		case model.VisitEventEnd:
 			start, ok := pending[k]
-			if !ok {
-				continue
+			usedGap := false
+			if ok {
+				delete(pending, k)
+				gap := e.CreatedAt.Sub(start)
+				if gap > 0 && gap <= analyticsPairingWindow {
+					durations = append(durations, int(gap/time.Millisecond))
+					usedGap = true
+				}
 			}
-			delete(pending, k)
-			gap := e.CreatedAt.Sub(start)
-			if gap < 0 || gap > analyticsPairingWindow {
-				continue
+			if !usedGap && e.DurationMs != nil && *e.DurationMs > 0 && time.Duration(*e.DurationMs)*time.Millisecond <= analyticsPairingWindow {
+				durations = append(durations, *e.DurationMs)
 			}
-			durations = append(durations, int(gap/time.Millisecond))
 		}
 	}
 	return durations

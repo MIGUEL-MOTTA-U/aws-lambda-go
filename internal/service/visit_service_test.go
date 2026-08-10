@@ -290,3 +290,67 @@ func TestVisitService_RecordEvent_WrapsRepositoryError(t *testing.T) {
 		t.Errorf("repository error must not be masked as ErrVisitInvalid")
 	}
 }
+
+func TestVisitService_GetListingVisits_ClampsTo90Days(t *testing.T) {
+	repo := newFakeVisitRepository()
+	svc := newTestService(t, repo)
+
+	baseTime := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return baseTime }
+
+	oldVisit := model.Visit{
+		ID:        "v-old",
+		ListingID: "l-1",
+		CreatedAt: baseTime.Add(-100 * 24 * time.Hour),
+	}
+	recentVisit := model.Visit{
+		ID:        "v-recent",
+		ListingID: "l-1",
+		CreatedAt: baseTime.Add(-10 * 24 * time.Hour),
+	}
+	repo.visits = []model.Visit{oldVisit, recentVisit}
+
+	// Requesting visits since 120 days ago should be clamped to 90 days ago.
+	visits, err := svc.GetListingVisits(context.Background(), "l-1", baseTime.Add(-120*24*time.Hour))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(visits) != 1 {
+		t.Fatalf("expected 1 visit (recent visit only), got %d", len(visits))
+	}
+	if visits[0].ID != "v-recent" {
+		t.Errorf("expected recent visit, got %s", visits[0].ID)
+	}
+}
+
+func TestVisitService_GetVisitorVisits_ClampsTo90Days(t *testing.T) {
+	repo := newFakeVisitRepository()
+	svc := newTestService(t, repo)
+
+	baseTime := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	svc.now = func() time.Time { return baseTime }
+
+	oldVisit := model.Visit{
+		ID:        "v-old",
+		VisitorID: "vis-1",
+		CreatedAt: baseTime.Add(-100 * 24 * time.Hour),
+	}
+	recentVisit := model.Visit{
+		ID:        "v-recent",
+		VisitorID: "vis-1",
+		CreatedAt: baseTime.Add(-10 * 24 * time.Hour),
+	}
+	repo.visits = []model.Visit{oldVisit, recentVisit}
+
+	// Requesting visits since 120 days ago should be clamped to 90 days ago.
+	visits, err := svc.GetVisitorVisits(context.Background(), "vis-1", baseTime.Add(-120*24*time.Hour))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(visits) != 1 {
+		t.Fatalf("expected 1 visit (recent visit only), got %d", len(visits))
+	}
+	if visits[0].ID != "v-recent" {
+		t.Errorf("expected recent visit, got %s", visits[0].ID)
+	}
+}

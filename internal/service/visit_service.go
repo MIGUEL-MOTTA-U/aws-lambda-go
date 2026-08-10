@@ -16,6 +16,9 @@ const (
 	// event accepted every `visitRateLimitWindow`. Mitigates bot spam
 	// without a separate counter table.
 	visitRateLimitWindow = 1 * time.Second
+
+	// maxVisitRetention is the maximum retention window for visit queries (DEC-007).
+	maxVisitRetention = 90 * 24 * time.Hour
 )
 
 var (
@@ -79,7 +82,7 @@ func (s *VisitService) RecordEvent(ctx context.Context, req VisitRecordRequest) 
 		req.Source = model.VisitSourcePublic
 	}
 
-	if s.isRateLimited(req.VisitorID) {
+	if req.EventType == model.VisitEventStart && s.isRateLimited(req.VisitorID) {
 		return model.Visit{}, ErrVisitRateLimited
 	}
 
@@ -97,7 +100,9 @@ func (s *VisitService) RecordEvent(ctx context.Context, req VisitRecordRequest) 
 		return model.Visit{}, fmt.Errorf("persisting visit: %w", err)
 	}
 
-	s.markSeen(req.VisitorID)
+	if req.EventType == model.VisitEventStart {
+		s.markSeen(req.VisitorID)
+	}
 	return visit, nil
 }
 
@@ -139,4 +144,24 @@ func (s *VisitService) markSeen(visitorID string) {
 	s.rateLimitMu.Lock()
 	defer s.rateLimitMu.Unlock()
 	s.rateLimitLast[visitorID] = s.now()
+}
+
+// GetListingVisits returns visit events for a listing since the specified time,
+// enforcing the max 90-day retention cutoff (DEC-007).
+func (s *VisitService) GetListingVisits(ctx context.Context, listingID string, since time.Time) ([]model.Visit, error) {
+	cutoff := s.now().Add(-maxVisitRetention)
+	if since.Before(cutoff) {
+		since = cutoff
+	}
+	return s.repo.ListByListingSince(ctx, listingID, since)
+}
+
+// GetVisitorVisits returns visit events for a visitor since the specified time,
+// enforcing the max 90-day retention cutoff (DEC-007).
+func (s *VisitService) GetVisitorVisits(ctx context.Context, visitorID string, since time.Time) ([]model.Visit, error) {
+	cutoff := s.now().Add(-maxVisitRetention)
+	if since.Before(cutoff) {
+		since = cutoff
+	}
+	return s.repo.ListByVisitorSince(ctx, visitorID, since)
 }

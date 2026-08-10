@@ -25,7 +25,7 @@ func (r *GormVisitRepository) Create(ctx context.Context, visit model.Visit) err
 func (r *GormVisitRepository) ListByVisitorSince(ctx context.Context, visitorID string, since time.Time) ([]model.Visit, error) {
 	var visits []model.Visit
 	err := r.db.WithContext(ctx).
-		Where("visitor_id = ? AND created_at >= ?", visitorID, since).
+		Where("visitor_id = ? AND created_at >= ? AND created_at >= NOW() - INTERVAL '90 days'", visitorID, since).
 		Order("created_at DESC").
 		Find(&visits).Error
 	if err != nil {
@@ -37,7 +37,7 @@ func (r *GormVisitRepository) ListByVisitorSince(ctx context.Context, visitorID 
 func (r *GormVisitRepository) ListByListingSince(ctx context.Context, listingID string, since time.Time) ([]model.Visit, error) {
 	var visits []model.Visit
 	err := r.db.WithContext(ctx).
-		Where("listing_id = ? AND created_at >= ?", listingID, since).
+		Where("listing_id = ? AND created_at >= ? AND created_at >= NOW() - INTERVAL '90 days'", listingID, since).
 		Order("created_at ASC").
 		Find(&visits).Error
 	if err != nil {
@@ -49,7 +49,7 @@ func (r *GormVisitRepository) ListByListingSince(ctx context.Context, listingID 
 func (r *GormVisitRepository) ListAllSince(ctx context.Context, since time.Time) ([]model.Visit, error) {
 	var visits []model.Visit
 	err := r.db.WithContext(ctx).
-		Where("created_at >= ?", since).
+		Where("created_at >= ? AND created_at >= NOW() - INTERVAL '90 days'", since).
 		Order("created_at ASC").
 		Find(&visits).Error
 	if err != nil {

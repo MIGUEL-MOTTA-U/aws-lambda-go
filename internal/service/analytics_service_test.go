@@ -205,9 +205,9 @@ func TestAnalyticsService_DropsOrphanedEndEvents(t *testing.T) {
 	// view_end without matching start (e.g. page closed before emit).
 	repo.events = append(repo.events,
 		ev("A", "v1", 0, model.VisitEventEnd),
-		// Start with end more than pairing window later (60s > 30s cap).
+		// Start with end more than pairing window later (31m > 30m cap).
 		ev("A", "v1", 1000, model.VisitEventStart),
-		ev("A", "v1", 61000, model.VisitEventEnd),
+		ev("A", "v1", 1000+31*60*1000, model.VisitEventEnd),
 	)
 
 	svc := NewAnalyticsService(repo)
@@ -220,6 +220,35 @@ func TestAnalyticsService_DropsOrphanedEndEvents(t *testing.T) {
 	}
 	if stats[0].TotalViews != 1 {
 		t.Errorf("still 1 view start, expected 1, got %d", stats[0].TotalViews)
+	}
+}
+
+func TestAnalyticsService_UsesDurationMsFallbackWhenStartUnpaired(t *testing.T) {
+	repo := &fakeAnalyticsRepo{}
+	now := time.Now().UTC()
+	dur := 15000
+
+	repo.events = []model.Visit{
+		{
+			ID:         "e1",
+			VisitorID:  "v1",
+			ListingID:  "listing-A",
+			EventType:  model.VisitEventEnd,
+			DurationMs: &dur,
+			CreatedAt:  now,
+		},
+	}
+
+	svc := NewAnalyticsService(repo)
+	stats, err := svc.TopListings(context.Background(), "7d", 50)
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if len(stats) == 0 {
+		t.Fatalf("expected stats for listing-A")
+	}
+	if stats[0].AvgDurationMs != 15000 {
+		t.Errorf("expected avg duration 15000ms from fallback, got %v", stats[0].AvgDurationMs)
 	}
 }
 
@@ -291,6 +320,58 @@ func TestAnalyticsService_LimitClampedToMax(t *testing.T) {
 	}
 	if len(stats) != 200 {
 		t.Errorf("limit must clamp to 200, got %d", len(stats))
+	}
+}
+
+func TestAnalyticsService_ExcludesEventsOlderThan90Days(t *testing.T) {
+	repo := &fakeAnalyticsRepo{}
+	baseTime := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+
+	// Event 1: 100 days ago (old event)
+	oldEvent := model.Visit{
+		ID:        "evt-old",
+		VisitorID: "v-old",
+		ListingID: "listing-100d",
+		EventType: model.VisitEventStart,
+		Source:    model.VisitSourcePublic,
+		CreatedAt: baseTime.Add(-100 * 24 * time.Hour),
+	}
+	// Event 2: 5 days ago (recent event)
+	recentEvent := model.Visit{
+		ID:        "evt-recent",
+		VisitorID: "v-recent",
+		ListingID: "listing-5d",
+		EventType: model.VisitEventStart,
+		Source:    model.VisitSourcePublic,
+		CreatedAt: baseTime.Add(-5 * 24 * time.Hour),
+	}
+	repo.events = []model.Visit{oldEvent, recentEvent}
+
+	svc := NewAnalyticsService(repo)
+	svc.now = func() time.Time { return baseTime }
+
+	windows := []string{"7d", "30d"}
+	for _, w := range windows {
+		t.Run("window_"+w, func(t *testing.T) {
+			stats, err := svc.TopListings(context.Background(), w, 50)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			for _, s := range stats {
+				if s.ListingID == "listing-100d" {
+					t.Errorf("event from 100 days ago appeared in window %s aggregate", w)
+				}
+			}
+			foundRecent := false
+			for _, s := range stats {
+				if s.ListingID == "listing-5d" {
+					foundRecent = true
+				}
+			}
+			if !foundRecent {
+				t.Errorf("expected recent event (5d ago) to appear in window %s aggregate", w)
+			}
+		})
 	}
 }
 
