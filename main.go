@@ -248,14 +248,16 @@ func main() {
 	analyticsService := service.NewAnalyticsService(visitRepo)
 	analyticsController := controller.NewAnalyticsController(analyticsService)
 
-	// Guard de autenticación para rutas de mutación (Etapa 2).
-	// Sin COGNITO_ISSUER/COGNITO_AUDIENCE queda deshabilitado (solo dev).
+	// Guard de autenticación para rutas de mutación.
+	// Requiere COGNITO_ISSUER y COGNITO_AUDIENCE en producción (AWS Lambda).
 	var tokenVerifier TokenVerifier
 	if verifier := auth.NewVerifierFromEnv(); verifier != nil {
 		tokenVerifier = verifier
 		log.Printf("[INFO] Cognito JWT guard enabled for mutation routes")
+	} else if !runningLocally {
+		panic("COGNITO_ISSUER and COGNITO_AUDIENCE are strictly required in production (AWS Lambda environment)")
 	} else {
-		log.Printf("[WARN] Cognito JWT guard DISABLED (set COGNITO_ISSUER and COGNITO_AUDIENCE); mutation routes are unprotected")
+		log.Printf("[WARN] Cognito JWT guard DISABLED (local development mode without COGNITO_ISSUER/COGNITO_AUDIENCE)")
 	}
 
 	router := Router{

@@ -1,0 +1,140 @@
+﻿AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Real Estate Backend API (Go + AWS Lambda + HTTP API + Cognito)
+  Diseñado estrictamente para mantener costo $0.00 USD (AWS Free Tier / Pay-Per-Use).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: production
+    AllowedValues:
+      - staging
+      - production
+  DatabaseConnection:
+    Type: String
+    NoEcho: true
+    Description: DSN de conexión PostgreSQL (Neon / Supabase Free Tier)
+  R2Endpoint:
+    Type: String
+    Description: Endpoint de Cloudflare R2 (https://<account_id>.r2.cloudflarestorage.com)
+  R2BucketName:
+    Type: String
+    Description: Nombre del bucket en Cloudflare R2
+  R2AccessKeyId:
+    Type: String
+    NoEcho: true
+    Description: Access Key ID de Cloudflare R2 API Token
+  R2SecretAccessKey:
+    Type: String
+    NoEcho: true
+    Description: Secret Access Key de Cloudflare R2 API Token
+  R2PublicUrl:
+    Type: String
+    Description: URL pública/CDN de Cloudflare R2 para servir imágenes
+
+Globals:
+  Function:
+    Timeout: 15
+    MemorySize: 256
+    Architecture: arm64
+
+Resources:
+  # ── 1. AWS Cognito User Pool ($0 USD hasta 50,000 MAUs) ────────────────────
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-user-pool
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      PasswordPolicy:
+        MinimumLength: 8
+        RequireLowercase: true
+        RequireNumbers: true
+        RequireSymbols: false
+        RequireUppercase: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub ${AWS::StackName}-spa-client
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - phone
+      SupportedIdentityProviders:
+        - COGNITO
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub realestate-auth-${AWS::AccountId}
+      UserPoolId: !Ref UserPool
+
+  # ── 2. API Gateway HTTP API V2 ($0 USD hasta 1,000,000 peticiones) ──────────
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: !Sub ${AWS::StackName}-api
+      CorsConfiguration:
+        AllowOrigins:
+          - "https://aura-urrea.vercel.app"
+          - "http://localhost:5173"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+          - authorization
+
+  # ── 3. AWS Lambda Function ($0 USD hasta 1M inv/mes y 3.2M sec compute) ─────
+  RealEstateApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Environment:
+        Variables:
+          DATABASE_CONNECTION: !Ref DatabaseConnection
+          R2_ENDPOINT: !Ref R2Endpoint
+          R2_BUCKET_NAME: !Ref R2BucketName
+          R2_ACCESS_KEY_ID: !Ref R2AccessKeyId
+          R2_SECRET_ACCESS_KEY: !Ref R2SecretAccessKey
+          R2_PUBLIC_URL: !Ref R2PublicUrl
+          COGNITO_ISSUER: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+          COGNITO_AUDIENCE: !Ref UserPoolClient
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiEndpoint:
+    Description: URL base de la HTTP API Gateway
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  CognitoUserPoolId:
+    Description: ID del User Pool de Cognito
+    Value: !Ref UserPool
+  CognitoClientId:
+    Description: Client ID del App Client público de Cognito
+    Value: !Ref UserPoolClient
+  CognitoDomain:
+    Description: URL del Hosted UI de Cognito
+    Value: !Sub https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com

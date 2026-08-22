@@ -8,7 +8,6 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -305,12 +304,6 @@ func ownerIDFromRequest(req events.APIGatewayV2HTTPRequest) string {
 				}
 			}
 		}
-	}
-	// Stage 1 (pre-Cognito) escape hatch: uploads without an authorizer are
-	// attributed to a fixed owner. Remove this variable once the JWT
-	// authorizer is enabled in Stage 2 (see ai-notes.md).
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("ALLOW_UNAUTHENTICATED_UPLOADS")), "true") {
-		return "stage1-anonymous"
 	}
 	return ""
 }
