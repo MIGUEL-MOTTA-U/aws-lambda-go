@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
@@ -26,10 +27,20 @@ func newFakeListingRepository() *fakeListingRepository {
 	return &fakeListingRepository{listings: make(map[string]model.Listing)}
 }
 
-func (r *fakeListingRepository) FindAll(ctx context.Context) ([]model.Listing, error) {
+func (r *fakeListingRepository) FindAll(ctx context.Context, limit, offset int) ([]model.Listing, error) {
 	all := make([]model.Listing, 0, len(r.listings))
 	for _, l := range r.listings {
 		all = append(all, l)
+	}
+	if offset >= len(all) {
+		if offset > 0 {
+			return []model.Listing{}, nil
+		}
+	} else if offset > 0 {
+		all = all[offset:]
+	}
+	if limit > 0 && len(all) > limit {
+		all = all[:limit]
 	}
 	return all, nil
 }
@@ -173,6 +184,7 @@ func newTestRouter() (Router, *fakeListingRepository, *fakeUserRepository) {
 	userService := service.NewUserServiceWithDependencies(userRepo, idGenerator, fixedClock)
 
 	return Router{
+		healthController:     controller.NewHealthController(nil),
 		userController:       controller.NewUserController(userService),
 		listingController:    controller.NewListingController(listingService),
 		uploadController:     controller.NewUploadController(&stubUploadService{}),
@@ -290,17 +302,16 @@ func TestListingsCRUDFlow(t *testing.T) {
 		t.Fatalf("get: expected 200, got %d (%s)", resp.StatusCode, resp.Body)
 	}
 
-	// List.
-	resp, _ = router.Route(ctx, makeRequest("GET", "/listings", ""))
+	// List with pagination.
+	reqWithQuery := makeRequest("GET", "/listings", "")
+	reqWithQuery.QueryStringParameters = map[string]string{"limit": "1", "offset": "0"}
+	resp, _ = router.Route(ctx, reqWithQuery)
 	if resp.StatusCode != 200 {
-		t.Fatalf("list: expected 200, got %d", resp.StatusCode)
+		t.Fatalf("list with pagination: expected 200, got %d", resp.StatusCode)
 	}
-	var all []model.Listing
-	if err := json.Unmarshal([]byte(resp.Body), &all); err != nil {
-		t.Fatalf("list: invalid JSON response: %v", err)
-	}
-	if len(all) != 1 {
-		t.Fatalf("list: expected 1 listing, got %d", len(all))
+	var paginated []model.Listing
+	if err := json.Unmarshal([]byte(resp.Body), &paginated); err != nil || len(paginated) != 1 {
+		t.Fatalf("list with pagination: expected 1 listing, got %d", len(paginated))
 	}
 
 	// Update (archive it, with an explicit long description).
@@ -667,3 +678,44 @@ func TestAuthGuardInjectsClaimsForUploads(t *testing.T) {
 		t.Fatalf("expected owner claims injected by the guard, got 401 (%s)", resp.Body)
 	}
 }
+
+func TestHealthRoute(t *testing.T) {
+	router, _, _ := newTestRouter()
+	ctx := context.Background()
+
+	for _, path := range []string{"/health", "/ping"} {
+		t.Run("GET "+path, func(t *testing.T) {
+			resp, err := router.Route(ctx, makeRequest("GET", path, ""))
+			if err != nil {
+				t.Fatalf("GET %s returned error: %v", path, err)
+			}
+			if resp.StatusCode != http.StatusServiceUnavailable {
+				t.Fatalf("expected 503 for nil DB, got %d (%s)", resp.StatusCode, resp.Body)
+			}
+			var healthResp controller.HealthResponse
+			if err := json.Unmarshal([]byte(resp.Body), &healthResp); err != nil {
+				t.Fatalf("invalid health response JSON: %v", err)
+			}
+			if healthResp.Status != "degraded" {
+				t.Fatalf("expected status degraded, got %q", healthResp.Status)
+			}
+			if healthResp.Database != "disconnected" {
+				t.Fatalf("expected database disconnected, got %q", healthResp.Database)
+			}
+			if healthResp.Timestamp == "" {
+				t.Fatal("expected timestamp to be set")
+			}
+		})
+	}
+
+	t.Run("POST /health returns 405", func(t *testing.T) {
+		resp, err := router.Route(ctx, makeRequest("POST", "/health", ""))
+		if err != nil {
+			t.Fatalf("POST /health returned error: %v", err)
+		}
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405 for POST /health, got %d (%s)", resp.StatusCode, resp.Body)
+		}
+	})
+}
+

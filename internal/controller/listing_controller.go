@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -16,7 +17,7 @@ import (
 )
 
 type ListingService interface {
-	ListListings(ctx context.Context) ([]model.Listing, error)
+	ListListings(ctx context.Context, limit, offset int) ([]model.Listing, error)
 	GetListing(ctx context.Context, id string) (model.Listing, error)
 	CreateListing(ctx context.Context, listing model.Listing) (model.Listing, error)
 	UpdateListing(ctx context.Context, id string, listing model.Listing) (model.Listing, error)
@@ -55,12 +56,29 @@ func (c ListingController) HandleRequest(ctx context.Context, req events.APIGate
 }
 
 func (c ListingController) listListings(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	listings, err := c.service.ListListings(ctx)
+	limit, offset := parseLimitOffset(req.QueryStringParameters)
+	listings, err := c.service.ListListings(ctx, limit, offset)
 	if err != nil {
 		return c.errorToResponse(req, err), nil
 	}
 
 	return buildSuccessResponse(req, http.StatusOK, listings)
+}
+
+func parseLimitOffset(queryParams map[string]string) (int, int) {
+	limit := 0
+	offset := 0
+	if val, ok := queryParams["limit"]; ok {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed >= 0 {
+			limit = parsed
+		}
+	}
+	if val, ok := queryParams["offset"]; ok {
+		if parsed, err := strconv.Atoi(val); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+	return limit, offset
 }
 
 func (c ListingController) getListing(ctx context.Context, req events.APIGatewayV2HTTPRequest, id string) (events.APIGatewayV2HTTPResponse, error) {

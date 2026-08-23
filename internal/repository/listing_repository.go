@@ -13,7 +13,7 @@ var (
 )
 
 type ListingRepository interface {
-	FindAll(ctx context.Context) ([]model.Listing, error)
+	FindAll(ctx context.Context, limit, offset int) ([]model.Listing, error)
 	FindByID(ctx context.Context, id string) (model.Listing, error)
 	Create(ctx context.Context, listing model.Listing) error
 	Update(ctx context.Context, listing model.Listing) error

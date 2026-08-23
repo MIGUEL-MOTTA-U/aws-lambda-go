@@ -45,10 +45,11 @@ type TokenVerifier interface {
 }
 
 type Router struct {
-	userController     *controller.UserController
-	listingController  *controller.ListingController
-	uploadController   *controller.UploadController
-	visitController    *controller.VisitController
+	healthController    *controller.HealthController
+	userController      *controller.UserController
+	listingController   *controller.ListingController
+	uploadController    *controller.UploadController
+	visitController     *controller.VisitController
 	analyticsController *controller.AnalyticsController
 	// tokenVerifier protege las rutas de mutación. nil = guard deshabilitado
 	// (desarrollo local sin COGNITO_ISSUER/COGNITO_AUDIENCE).
@@ -72,6 +73,9 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 	}
 
 	path := strings.TrimRight(req.RawPath, "/")
+	if path == "/health" || path == "/ping" {
+		return r.healthController.HandleRequest(ctx, req)
+	}
 	if path == "/users" || strings.HasPrefix(path, "/users/") {
 		return r.userController.HandleRequest(ctx, req)
 	}
@@ -260,7 +264,10 @@ func main() {
 		log.Printf("[WARN] Cognito JWT guard DISABLED (local development mode without COGNITO_ISSUER/COGNITO_AUDIENCE)")
 	}
 
+	healthController := controller.NewHealthController(db)
+
 	router := Router{
+		healthController:    healthController,
 		userController:      userController,
 		listingController:   listingController,
 		uploadController:    uploadController,

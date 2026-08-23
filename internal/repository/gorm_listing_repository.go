@@ -18,9 +18,16 @@ func NewGormListingRepository(db *gorm.DB) *GormListingRepository {
 	}
 }
 
-func (r *GormListingRepository) FindAll(ctx context.Context) ([]model.Listing, error) {
+func (r *GormListingRepository) FindAll(ctx context.Context, limit, offset int) ([]model.Listing, error) {
 	var listings []model.Listing
-	err := r.db.WithContext(ctx).Find(&listings).Error
+	query := r.db.WithContext(ctx)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	err := query.Find(&listings).Error
 	if err != nil {
 		return nil, err
 	}

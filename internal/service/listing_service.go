@@ -59,8 +59,8 @@ func NewListingServiceWithDependencies(repository repository.ListingRepository, 
 	}
 }
 
-func (s ListingService) ListListings(ctx context.Context) ([]model.Listing, error) {
-	return s.repository.FindAll(ctx)
+func (s ListingService) ListListings(ctx context.Context, limit, offset int) ([]model.Listing, error) {
+	return s.repository.FindAll(ctx, limit, offset)
 }
 
 func (s ListingService) GetListing(ctx context.Context, id string) (model.Listing, error) {
