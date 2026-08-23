@@ -73,7 +73,7 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 		return resp, nil
 	}
 
-	path := strings.TrimRight(req.RawPath, "/")
+	path := extractPath(req)
 	if path == "/health" || path == "/ping" {
 		return r.healthController.HandleRequest(ctx, req)
 	}
@@ -104,6 +104,18 @@ func (r Router) Route(ctx context.Context, req events.APIGatewayV2HTTPRequest) (
 		},
 		Body: `{"message":"route not found"}`,
 	}, nil
+}
+
+func extractPath(req events.APIGatewayV2HTTPRequest) string {
+	p := req.RawPath
+	if strings.TrimSpace(p) == "" {
+		p = req.RequestContext.HTTP.Path
+	}
+	p = strings.TrimRight(p, "/")
+	if p == "" {
+		return "/"
+	}
+	return p
 }
 
 // isListingsMediaRoute returns true for /listings/{id}/media paths,
@@ -145,7 +157,7 @@ func (r Router) authorize(ctx context.Context, req *events.APIGatewayV2HTTPReque
 // admin panel only and must not leak via the public read endpoints.
 func requiresAuth(req events.APIGatewayV2HTTPRequest) bool {
 	method := req.RequestContext.HTTP.Method
-	path := strings.TrimRight(req.RawPath, "/")
+	path := extractPath(req)
 
 	// Analytics reads are guarded even though GETs elsewhere aren't.
 	if method == http.MethodGet && (path == "/analytics" || strings.HasPrefix(path, "/analytics/")) {
