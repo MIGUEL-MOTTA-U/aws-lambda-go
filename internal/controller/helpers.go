@@ -86,11 +86,20 @@ func buildSuccessResponse(req events.APIGatewayV2HTTPRequest, statusCode int, pa
 		}
 	}
 
+	headers := defaultHeaders()
+	if method == http.MethodGet && statusCode == http.StatusOK {
+		cleanPath := strings.TrimRight(path, "/")
+		if cleanPath == "/listings" || strings.HasPrefix(cleanPath, "/listings/") ||
+			cleanPath == "/users" || strings.HasPrefix(cleanPath, "/users/") {
+			headers["Cache-Control"] = "public, max-age=60, s-maxage=300"
+		}
+	}
+
 	log.Printf("[INFO] RequestID: %s | %s %s | Status: %d", requestID, method, path, statusCode)
 
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: statusCode,
-		Headers:    defaultHeaders(),
+		Headers:    headers,
 		Body:       string(body),
 	}, nil
 }

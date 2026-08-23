@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -213,6 +214,16 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("unable to connect to database: %v", err))
 	}
+
+	// Connection pool tuning for AWS Lambda & Serverless Postgres (Neon / Supabase).
+	sqlDB, err := db.DB()
+	if err != nil {
+		panic(fmt.Sprintf("unable to get underlying sql.DB: %v", err))
+	}
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(2)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(1 * time.Minute)
 
 	// Auto-migrate tables for postgres
 	err = db.AutoMigrate(&model.User{}, &model.Listing{}, &model.Asset{}, &model.Visit{})
